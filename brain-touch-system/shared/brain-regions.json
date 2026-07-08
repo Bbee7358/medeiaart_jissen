@@ -1,0 +1,126 @@
+{
+  "version": "0.1.0",
+  "description": "Shared display-oriented brain region labels for the Brain Touch System. These labels prioritize stable exhibition interaction over medical precision.",
+  "regions": [
+    {
+      "id": "left_frontal_lobe",
+      "labelJa": "左前頭葉",
+      "labelEn": "Left Frontal Lobe",
+      "descriptionJa": "脳の前方左側の領域。展示では正面左寄りの大きな接触領域として扱う。",
+      "defaultSurfaceTypes": ["front", "top", "left"],
+      "visualCue": {
+        "color": "#5b8def",
+        "shortLabelJa": "左前",
+        "priority": 10
+      }
+    },
+    {
+      "id": "right_frontal_lobe",
+      "labelJa": "右前頭葉",
+      "labelEn": "Right Frontal Lobe",
+      "descriptionJa": "脳の前方右側の領域。展示では正面右寄りの大きな接触領域として扱う。",
+      "defaultSurfaceTypes": ["front", "top", "right"],
+      "visualCue": {
+        "color": "#4aa3a2",
+        "shortLabelJa": "右前",
+        "priority": 10
+      }
+    },
+    {
+      "id": "left_parietal_lobe",
+      "labelJa": "左頭頂葉",
+      "labelEn": "Left Parietal Lobe",
+      "descriptionJa": "脳の上方から中央左側の領域。展示では上面左寄りの接触領域として扱う。",
+      "defaultSurfaceTypes": ["top", "left"],
+      "visualCue": {
+        "color": "#8f78d8",
+        "shortLabelJa": "左頭頂",
+        "priority": 20
+      }
+    },
+    {
+      "id": "right_parietal_lobe",
+      "labelJa": "右頭頂葉",
+      "labelEn": "Right Parietal Lobe",
+      "descriptionJa": "脳の上方から中央右側の領域。展示では上面右寄りの接触領域として扱う。",
+      "defaultSurfaceTypes": ["top", "right"],
+      "visualCue": {
+        "color": "#d1779d",
+        "shortLabelJa": "右頭頂",
+        "priority": 20
+      }
+    },
+    {
+      "id": "left_temporal_lobe",
+      "labelJa": "左側頭葉",
+      "labelEn": "Left Temporal Lobe",
+      "descriptionJa": "脳の左側面下寄りの領域。展示では左側面の触りやすい領域として扱う。",
+      "defaultSurfaceTypes": ["left", "side"],
+      "visualCue": {
+        "color": "#f2a65a",
+        "shortLabelJa": "左側頭",
+        "priority": 30
+      }
+    },
+    {
+      "id": "right_temporal_lobe",
+      "labelJa": "右側頭葉",
+      "labelEn": "Right Temporal Lobe",
+      "descriptionJa": "脳の右側面下寄りの領域。展示では右側面の触りやすい領域として扱う。",
+      "defaultSurfaceTypes": ["right", "side"],
+      "visualCue": {
+        "color": "#e07a5f",
+        "shortLabelJa": "右側頭",
+        "priority": 30
+      }
+    },
+    {
+      "id": "occipital_lobe",
+      "labelJa": "後頭葉",
+      "labelEn": "Occipital Lobe",
+      "descriptionJa": "脳の後方の領域。展示では左右分割せず、背面側の接触領域として扱う。",
+      "defaultSurfaceTypes": ["back", "top"],
+      "visualCue": {
+        "color": "#7fb069",
+        "shortLabelJa": "後頭",
+        "priority": 40
+      }
+    },
+    {
+      "id": "cerebellum",
+      "labelJa": "小脳",
+      "labelEn": "Cerebellum",
+      "descriptionJa": "脳の後方下部にある領域。展示模型で形状が分かれている場合に独立領域として扱う。",
+      "defaultSurfaceTypes": ["back", "bottom"],
+      "visualCue": {
+        "color": "#6ec6ca",
+        "shortLabelJa": "小脳",
+        "priority": 50
+      }
+    },
+    {
+      "id": "brainstem",
+      "labelJa": "脳幹",
+      "labelEn": "Brainstem",
+      "descriptionJa": "脳の下方中央から伸びる領域。模型に造形されている場合のみ安定判定対象にする。",
+      "defaultSurfaceTypes": ["bottom", "back"],
+      "visualCue": {
+        "color": "#b08968",
+        "shortLabelJa": "脳幹",
+        "priority": 60
+      }
+    },
+    {
+      "id": "unknown",
+      "labelJa": "不明",
+      "labelEn": "Unknown",
+      "descriptionJa": "部位を安定して判定できない状態。接触なし、境界付近、低信頼度の場合に使う。",
+      "defaultSurfaceTypes": ["unknown"],
+      "visualCue": {
+        "color": "#9aa5b1",
+        "shortLabelJa": "不明",
+        "priority": 999
+      }
+    }
+  ]
+}
