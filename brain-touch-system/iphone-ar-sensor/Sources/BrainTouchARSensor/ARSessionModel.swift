@@ -14,12 +14,14 @@ final class ARSessionModel: NSObject, ObservableObject {
     @Published var indexTipXText = "-"
     @Published var indexTipYText = "-"
     @Published var indexTipDepthText = "-"
+    @Published var indexTip3DText = "-"
     @Published var handConfidenceText = "-"
 
     private var lastFrameTimestamp: TimeInterval?
     private var lastHandPoseTimestamp: TimeInterval = 0
     private var smoothedFrameRate: Double = 0
     private let handPoseInterval: TimeInterval = 0.15
+    private var indexTip3DSmoother = Point3DSmoother(maxSampleCount: 5)
 
     func startSession(on session: ARSession) {
         guard ARWorldTrackingConfiguration.isSupported else {
@@ -53,10 +55,11 @@ extension ARSessionModel: ARSessionDelegate {
         let hasDepth = frame.smoothedSceneDepth != nil || frame.sceneDepth != nil
         let depthData = frame.smoothedSceneDepth ?? frame.sceneDepth
         let pixelBuffer = frame.capturedImage
+        let camera = frame.camera
 
         Task { @MainActor in
             self.updateFrameMetrics(timestamp: timestamp, hasDepth: hasDepth)
-            self.detectHandPoseIfNeeded(pixelBuffer: pixelBuffer, depthData: depthData, timestamp: timestamp)
+            self.detectHandPoseIfNeeded(pixelBuffer: pixelBuffer, depthData: depthData, camera: camera, timestamp: timestamp)
         }
     }
 
@@ -115,7 +118,7 @@ private extension ARSessionModel {
         depthStatus = hasDepth ? "available" : "unavailable"
     }
 
-    func detectHandPoseIfNeeded(pixelBuffer: CVPixelBuffer, depthData: ARDepthData?, timestamp: TimeInterval) {
+    func detectHandPoseIfNeeded(pixelBuffer: CVPixelBuffer, depthData: ARDepthData?, camera: ARCamera, timestamp: TimeInterval) {
         guard timestamp - lastHandPoseTimestamp >= handPoseInterval else { return }
         lastHandPoseTimestamp = timestamp
 
@@ -131,12 +134,14 @@ private extension ARSessionModel {
             try handler.perform([request])
 
             guard let observation = request.results?.first else {
+                indexTip3DSmoother.reset()
                 updateHandPose(.empty)
                 return
             }
 
-            updateHandPose(makeHandPoseSnapshot(from: observation, depthData: depthData))
+            updateHandPose(makeHandPoseSnapshot(from: observation, depthData: depthData, camera: camera))
         } catch {
+            indexTip3DSmoother.reset()
             updateHandPose(.empty)
         }
     }
@@ -147,10 +152,13 @@ private extension ARSessionModel {
         indexTipXText = snapshot.fingerTips.indexTip.map { String(format: "%.3f", $0.x) } ?? "-"
         indexTipYText = snapshot.fingerTips.indexTip.map { String(format: "%.3f", $0.y) } ?? "-"
         indexTipDepthText = snapshot.indexTipDepthMeters.map { String(format: "%.2fm", $0) } ?? "-"
+        indexTip3DText = snapshot.indexTip3D.map {
+            String(format: "x %.3f, y %.3f, z %.3f m", $0.x, $0.y, $0.z)
+        } ?? "-"
         handConfidenceText = String(format: "%.2f", snapshot.confidence)
     }
 
-    func makeHandPoseSnapshot(from observation: VNHumanHandPoseObservation, depthData: ARDepthData?) -> HandPoseSnapshot {
+    func makeHandPoseSnapshot(from observation: VNHumanHandPoseObservation, depthData: ARDepthData?, camera: ARCamera) -> HandPoseSnapshot {
         let wrist = recognizedJoint(.wrist, from: observation)
         let thumbTip = recognizedJoint(.thumbTip, from: observation)
         let indexTip = recognizedJoint(.indexTip, from: observation)
@@ -165,6 +173,12 @@ private extension ARSessionModel {
             from: depthData,
             kernelSize: 5
         )
+        let rawIndexTip3D = PointUnprojector.unprojectPoint(
+            normalizedPoint: detected ? indexTip?.point : nil,
+            depthMeters: depthMeters,
+            camera: camera
+        )
+        let smoothedIndexTip3D = indexTip3DSmoother.append(rawIndexTip3D)
 
         return HandPoseSnapshot(
             handDetected: detected,
@@ -177,6 +191,8 @@ private extension ARSessionModel {
                 littleTip: littleTip?.point
             ),
             indexTipDepthMeters: depthMeters,
+            indexTip3D: smoothedIndexTip3D,
+            indexTip3DSpace: PointUnprojector.outputCoordinateSpace,
             confidence: detected ? confidence : 0
         )
     }

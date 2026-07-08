@@ -178,8 +178,35 @@ Visionで手を検出できた場合は、以下も送信します。
 - `debug.indexTip2D`
 - `debug.fingerTips2D`
 - `debug.depthMeters`
+- `debug.indexTip3D`
+- `debug.indexTip3DSpace`
 
-まだ3D座標化はしていないため、`debug.indexTip3D` は `null` のままです。
+## 指先3D座標
+
+`PointUnprojector.unprojectPoint(...)` で、Visionの `indexTip2D` とLiDARの `depthMeters` を使い、指先の3D座標を計算します。
+
+現在送信する `debug.indexTip3D` は `debug.indexTip3DSpace: "arkit_world"` の座標です。単位はメートルです。
+
+ARKitワールド座標系:
+
+- 原点はARSession開始時に決まる
+- 単位はメートル
+- `x`, `y`, `z` はARKitのワールド空間上の位置
+- カメラが動いても同じ実空間上の点は近いワールド座標として扱える
+
+内部では一度カメラ座標へ戻してから、`ARFrame.camera.transform` でワールド座標へ変換しています。
+
+カメラ座標系の前提:
+
+- `+X`: 画像右方向
+- `+Y`: 画像上方向
+- `-Z`: カメラ前方
+
+注意:
+
+Vision座標、ARKitカメラ画像、LiDAR深度マップは、実機の向きやマウント方向によって回転・左右反転がずれる可能性があります。現在の変換は縦向きデバッグ表示を前提にしています。最終展示の固定位置で、実際に指先を動かしながら `convertVisionPointToNormalizedDisplay(_:)`, `DepthSampler`, `PointUnprojector` の対応を確認してください。
+
+`indexTip3D` は直近5サンプルの移動平均で平滑化しています。深度が取れない、または手が検出できない場合は `null` になります。
 
 ## LiDAR非対応端末の場合
 
@@ -191,9 +218,7 @@ LiDAR depth is not available
 
 ## まだ実装しないこと
 
-- 手の検出
 - 脳模型との接触判定
-- 2D座標 + depth からの3D座標化
 - キャリブレーションUI
 
 これらは次フェーズで追加します。

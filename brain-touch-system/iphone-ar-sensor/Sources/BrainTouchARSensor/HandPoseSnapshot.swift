@@ -5,6 +5,12 @@ struct HandJoint2D: Codable, Equatable {
     let y: Double
 }
 
+struct HandJoint3D: Codable, Equatable {
+    let x: Double
+    let y: Double
+    let z: Double
+}
+
 struct FingerTips2D: Codable, Equatable {
     let thumbTip: HandJoint2D?
     let indexTip: HandJoint2D?
@@ -35,6 +41,8 @@ struct HandPoseSnapshot: Equatable {
     let wrist: HandJoint2D?
     let fingerTips: FingerTips2D
     let indexTipDepthMeters: Double?
+    let indexTip3D: HandJoint3D?
+    let indexTip3DSpace: String
     let confidence: Double
 
     static let empty = HandPoseSnapshot(
@@ -48,6 +56,8 @@ struct HandPoseSnapshot: Equatable {
             littleTip: nil
         ),
         indexTipDepthMeters: nil,
+        indexTip3D: nil,
+        indexTip3DSpace: "arkit_world",
         confidence: 0
     )
 }

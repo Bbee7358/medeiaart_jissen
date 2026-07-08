@@ -260,6 +260,10 @@ function App() {
               <dd>{formatPoint3D(lastEvent?.debug.indexTip3D ?? null)}</dd>
             </div>
             <div>
+              <dt>indexTip3DSpace</dt>
+              <dd>{lastEvent?.debug.indexTip3DSpace ?? "-"}</dd>
+            </div>
+            <div>
               <dt>source</dt>
               <dd>{lastEvent?.source ?? "-"}</dd>
             </div>

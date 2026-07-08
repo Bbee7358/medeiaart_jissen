@@ -115,6 +115,10 @@
         "indexTip3D": {
           "$ref": "#/$defs/point3D"
         },
+        "indexTip3DSpace": {
+          "type": "string",
+          "enum": ["arkit_world", "camera"]
+        },
         "fingerTips2D": {
           "type": "object",
           "additionalProperties": false,

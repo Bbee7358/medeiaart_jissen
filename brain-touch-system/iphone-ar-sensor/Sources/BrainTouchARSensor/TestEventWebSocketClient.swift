@@ -308,13 +308,16 @@ private struct TouchTestEvent: Encodable {
 
 private struct TouchTestDebug: Encodable {
     let indexTip2D: HandJoint2D?
-    let indexTip3D: TouchPoint3D? = nil
+    let indexTip3D: HandJoint3D?
+    let indexTip3DSpace: String
     let depthMeters: Double?
     let fingerTips2D: FingerTips2D
     let fps = 30.0
 
     init(handPose: HandPoseSnapshot) {
         self.indexTip2D = handPose.fingerTips.indexTip
+        self.indexTip3D = handPose.indexTip3D
+        self.indexTip3DSpace = handPose.indexTip3DSpace
         self.depthMeters = handPose.indexTipDepthMeters
         self.fingerTips2D = handPose.fingerTips
     }
@@ -322,6 +325,7 @@ private struct TouchTestDebug: Encodable {
     enum CodingKeys: String, CodingKey {
         case indexTip2D
         case indexTip3D
+        case indexTip3DSpace
         case depthMeters
         case fingerTips2D
         case fps
@@ -331,14 +335,9 @@ private struct TouchTestDebug: Encodable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encodeOptionalAsNull(indexTip2D, forKey: .indexTip2D)
         try container.encodeOptionalAsNull(indexTip3D, forKey: .indexTip3D)
+        try container.encode(indexTip3DSpace, forKey: .indexTip3DSpace)
         try container.encodeOptionalAsNull(depthMeters, forKey: .depthMeters)
         try container.encode(fingerTips2D, forKey: .fingerTips2D)
         try container.encode(fps, forKey: .fps)
     }
-}
-
-private struct TouchPoint3D: Encodable {
-    let x: Double
-    let y: Double
-    let z: Double
 }

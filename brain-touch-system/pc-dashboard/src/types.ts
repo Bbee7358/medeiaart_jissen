@@ -26,6 +26,7 @@ export type TouchEventMessage = {
   debug: {
     indexTip2D: Point2D | null;
     indexTip3D: Point3D | null;
+    indexTip3DSpace?: "arkit_world" | "camera";
     fingerTips2D?: {
       thumbTip: Point2D | null;
       indexTip: Point2D | null;

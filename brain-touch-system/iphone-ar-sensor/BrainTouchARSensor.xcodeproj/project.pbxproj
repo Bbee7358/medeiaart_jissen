@@ -14,6 +14,7 @@
 		110000000000000000000005 /* TestEventWebSocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000105 /* TestEventWebSocketClient.swift */; };
 		110000000000000000000006 /* HandPoseSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000106 /* HandPoseSnapshot.swift */; };
 		110000000000000000000007 /* DepthSampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000109 /* DepthSampler.swift */; };
+		110000000000000000000008 /* PointUnprojector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000110 /* PointUnprojector.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -26,6 +27,7 @@
 		110000000000000000000107 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		110000000000000000000108 /* BrainTouchARSensor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BrainTouchARSensor.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		110000000000000000000109 /* DepthSampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DepthSampler.swift; sourceTree = "<group>"; };
+		110000000000000000000110 /* PointUnprojector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PointUnprojector.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -58,6 +60,7 @@
 				110000000000000000000105 /* TestEventWebSocketClient.swift */,
 				110000000000000000000106 /* HandPoseSnapshot.swift */,
 				110000000000000000000109 /* DepthSampler.swift */,
+				110000000000000000000110 /* PointUnprojector.swift */,
 			);
 			path = Sources/BrainTouchARSensor;
 			sourceTree = "<group>";
@@ -142,6 +145,7 @@
 				110000000000000000000005 /* TestEventWebSocketClient.swift in Sources */,
 				110000000000000000000006 /* HandPoseSnapshot.swift in Sources */,
 				110000000000000000000007 /* DepthSampler.swift in Sources */,
+				110000000000000000000008 /* PointUnprojector.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

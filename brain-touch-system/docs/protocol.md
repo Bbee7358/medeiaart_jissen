@@ -32,6 +32,7 @@ PC側は受信したJSONを表示・ログ保存・演出接続に使います�
   "debug": {
     "indexTip2D": { "x": 0.52, "y": 0.43 },
     "indexTip3D": { "x": 0.12, "y": 0.34, "z": -0.81 },
+    "indexTip3DSpace": "arkit_world",
     "depthMeters": 0.81,
     "fps": 30
   }
@@ -56,6 +57,19 @@ PC側は受信したJSONを表示・ログ保存・演出接続に使います�
 | `durationSec` | number | yes | 現在の接触継続時間 |
 | `confidence` | number | yes | 判定信頼度。0.0から1.0 |
 | `debug` | object | yes | デバッグ用情報 |
+
+## `debug`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `indexTip2D` | object or null | Visionで検出した人差し指先の正規化2D座標。0から1 |
+| `indexTip3D` | object or null | 人差し指先の3D座標。単位はメートル |
+| `indexTip3DSpace` | string | `indexTip3D` の座標系。現在は `arkit_world` |
+| `depthMeters` | number or null | 人差し指先位置でサンプリングしたLiDAR深度 |
+| `fingerTips2D` | object | 各指先の正規化2D座標 |
+| `fps` | number | iPhone側の推定FPS |
+
+`indexTip3D` の現在の座標系は `arkit_world` です。ARKitワールド座標は、ARSession開始時に決まる原点を基準にしたメートル単位の座標です。脳模型との距離判定に使うには、別途キャリブレーションで脳模型座標系へ変換する必要があります。
 
 ## `region`
 
@@ -111,4 +125,3 @@ TODO:
 - 常時送信か状態変化送信かを決める
 - WebSocket再接続仕様を決める
 - PCからiPhoneへ設定を送る双方向プロトコルを検討する
-
