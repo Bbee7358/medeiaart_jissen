@@ -1,0 +1,63 @@
+import Foundation
+
+struct HandJoint2D: Codable, Equatable {
+    let x: Double
+    let y: Double
+}
+
+struct FingerTips2D: Codable, Equatable {
+    let thumbTip: HandJoint2D?
+    let indexTip: HandJoint2D?
+    let middleTip: HandJoint2D?
+    let ringTip: HandJoint2D?
+    let littleTip: HandJoint2D?
+
+    enum CodingKeys: String, CodingKey {
+        case thumbTip
+        case indexTip
+        case middleTip
+        case ringTip
+        case littleTip
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeOptionalAsNull(thumbTip, forKey: .thumbTip)
+        try container.encodeOptionalAsNull(indexTip, forKey: .indexTip)
+        try container.encodeOptionalAsNull(middleTip, forKey: .middleTip)
+        try container.encodeOptionalAsNull(ringTip, forKey: .ringTip)
+        try container.encodeOptionalAsNull(littleTip, forKey: .littleTip)
+    }
+}
+
+struct HandPoseSnapshot: Equatable {
+    let handDetected: Bool
+    let wrist: HandJoint2D?
+    let fingerTips: FingerTips2D
+    let indexTipDepthMeters: Double?
+    let confidence: Double
+
+    static let empty = HandPoseSnapshot(
+        handDetected: false,
+        wrist: nil,
+        fingerTips: FingerTips2D(
+            thumbTip: nil,
+            indexTip: nil,
+            middleTip: nil,
+            ringTip: nil,
+            littleTip: nil
+        ),
+        indexTipDepthMeters: nil,
+        confidence: 0
+    )
+}
+
+extension KeyedEncodingContainer {
+    mutating func encodeOptionalAsNull<T: Encodable>(_ value: T?, forKey key: Key) throws {
+        if let value {
+            try encode(value, forKey: key)
+        } else {
+            try encodeNil(forKey: key)
+        }
+    }
+}

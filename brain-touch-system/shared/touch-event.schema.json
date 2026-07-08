@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/brain-touch-system/touch-event.schema.json",
+  "title": "Brain Touch Event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "source",
+    "timestamp",
+    "handDetected",
+    "isTouching",
+    "region",
+    "regionLabel",
+    "surface",
+    "surfaceLabel",
+    "contactType",
+    "distanceCm",
+    "durationSec",
+    "confidence",
+    "debug"
+  ],
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "0.1.0"
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1,
+      "examples": ["iphone-12-pro"]
+    },
+    "timestamp": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Unix time in milliseconds."
+    },
+    "handDetected": {
+      "type": "boolean"
+    },
+    "isTouching": {
+      "type": "boolean"
+    },
+    "region": {
+      "type": ["string", "null"],
+      "enum": [
+        "left_frontal_lobe",
+        "right_frontal_lobe",
+        "left_parietal_lobe",
+        "right_parietal_lobe",
+        "left_temporal_lobe",
+        "right_temporal_lobe",
+        "left_occipital_lobe",
+        "right_occipital_lobe",
+        "cerebellum",
+        "brainstem",
+        "unknown",
+        null
+      ]
+    },
+    "regionLabel": {
+      "type": ["string", "null"]
+    },
+    "surface": {
+      "type": ["string", "null"],
+      "enum": [
+        "front",
+        "back",
+        "left",
+        "right",
+        "top",
+        "bottom",
+        "side",
+        "unknown",
+        null
+      ]
+    },
+    "surfaceLabel": {
+      "type": ["string", "null"]
+    },
+    "contactType": {
+      "type": "string",
+      "enum": [
+        "index_fingertip",
+        "hand_palm",
+        "unknown"
+      ]
+    },
+    "distanceCm": {
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+    "durationSec": {
+      "type": "number",
+      "minimum": 0
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "debug": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "indexTip2D",
+        "indexTip3D",
+        "depthMeters",
+        "fps"
+      ],
+      "properties": {
+        "indexTip2D": {
+          "$ref": "#/$defs/point2D"
+        },
+        "indexTip3D": {
+          "$ref": "#/$defs/point3D"
+        },
+        "fingerTips2D": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["thumbTip", "indexTip", "middleTip", "ringTip", "littleTip"],
+          "properties": {
+            "thumbTip": {
+              "$ref": "#/$defs/point2D"
+            },
+            "indexTip": {
+              "$ref": "#/$defs/point2D"
+            },
+            "middleTip": {
+              "$ref": "#/$defs/point2D"
+            },
+            "ringTip": {
+              "$ref": "#/$defs/point2D"
+            },
+            "littleTip": {
+              "$ref": "#/$defs/point2D"
+            }
+          }
+        },
+        "depthMeters": {
+          "type": ["number", "null"],
+          "minimum": 0
+        },
+        "fps": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    }
+  },
+  "$defs": {
+    "point2D": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["x", "y"],
+      "properties": {
+        "x": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "y": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "point3D": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["x", "y", "z"],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "z": {
+          "type": "number"
+        }
+      }
+    }
+  }
+}

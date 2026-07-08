@@ -1,0 +1,22 @@
+{
+  "version": "0.1.0",
+  "source": "iphone-12-pro",
+  "timestamp": 1720000002400,
+  "handDetected": false,
+  "isTouching": false,
+  "region": null,
+  "regionLabel": null,
+  "surface": null,
+  "surfaceLabel": null,
+  "contactType": "unknown",
+  "distanceCm": null,
+  "durationSec": 0,
+  "confidence": 0,
+  "debug": {
+    "indexTip2D": null,
+    "indexTip3D": null,
+    "depthMeters": null,
+    "fps": 30
+  }
+}
+

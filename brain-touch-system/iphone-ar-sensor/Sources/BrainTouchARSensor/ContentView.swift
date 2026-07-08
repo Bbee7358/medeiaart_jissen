@@ -1,0 +1,108 @@
+import SwiftUI
+
+struct ContentView: View {
+    @StateObject private var sessionModel = ARSessionModel()
+    @StateObject private var webSocketClient = TestEventWebSocketClient()
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            ARViewContainer(sessionModel: sessionModel)
+                .ignoresSafeArea()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Brain Touch AR Sensor")
+                        .font(.headline)
+
+                    DebugRow(label: "AR session status", value: sessionModel.sessionStatus)
+                    DebugRow(label: "depth", value: sessionModel.depthStatus)
+                    DebugRow(label: "current FPS", value: sessionModel.fpsText)
+                    DebugRow(label: "current timestamp", value: sessionModel.timestampText)
+                    DebugRow(label: "handDetected", value: sessionModel.handDetectedText)
+                    DebugRow(label: "indexTip normalized x", value: sessionModel.indexTipXText)
+                    DebugRow(label: "indexTip normalized y", value: sessionModel.indexTipYText)
+                    DebugRow(label: "indexTip depth", value: sessionModel.indexTipDepthText)
+                    DebugRow(label: "confidence", value: sessionModel.handConfidenceText)
+
+                    if !sessionModel.isDepthAvailable {
+                        Text("LiDAR depth is not available")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.orange)
+                            .padding(.top, 4)
+                    }
+
+                    Divider()
+                        .background(.white.opacity(0.28))
+
+                    Text("PC WebSocket")
+                        .font(.subheadline.weight(.semibold))
+
+                    TextField("ws://192.168.0.10:8787", text: $webSocketClient.urlString)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                        .textFieldStyle(.roundedBorder)
+                        .foregroundStyle(.primary)
+
+                    HStack(spacing: 10) {
+                        Button("Connect") {
+                            webSocketClient.connect()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(webSocketClient.isConnected)
+
+                        Button("Disconnect") {
+                            webSocketClient.disconnect()
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(!webSocketClient.isConnected)
+                    }
+
+                    DebugRow(label: "WebSocket URL", value: webSocketClient.urlString)
+                    DebugRow(label: "connection status", value: webSocketClient.connectionStatus)
+                    DebugRow(label: "last sent timestamp", value: webSocketClient.lastSentTimestampText)
+
+                    Text("last sent JSON")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.72))
+
+                    ScrollView(.horizontal) {
+                        Text(webSocketClient.lastSentJSON.isEmpty ? "-" : webSocketClient.lastSentJSON)
+                            .font(.caption2.monospaced())
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 180)
+                }
+                .padding(16)
+                .background(.black.opacity(0.68), in: RoundedRectangle(cornerRadius: 8))
+                .foregroundStyle(.white)
+                .padding()
+            }
+        }
+        .onChange(of: sessionModel.handPose) { handPose in
+            webSocketClient.updateHandPose(handPose)
+        }
+    }
+}
+
+private struct DebugRow: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(label)
+                .foregroundStyle(.white.opacity(0.72))
+            Spacer(minLength: 16)
+            Text(value)
+                .fontWeight(.semibold)
+                .multilineTextAlignment(.trailing)
+        }
+        .font(.caption.monospacedDigit())
+    }
+}
+
+#Preview {
+    ContentView()
+}

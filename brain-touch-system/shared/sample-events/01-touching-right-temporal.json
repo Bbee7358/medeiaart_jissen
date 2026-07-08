@@ -1,0 +1,22 @@
+{
+  "version": "0.1.0",
+  "source": "iphone-12-pro",
+  "timestamp": 1720000000000,
+  "handDetected": true,
+  "isTouching": true,
+  "region": "right_temporal_lobe",
+  "regionLabel": "右側頭葉",
+  "surface": "side",
+  "surfaceLabel": "側面",
+  "contactType": "index_fingertip",
+  "distanceCm": 2.8,
+  "durationSec": 0.72,
+  "confidence": 0.84,
+  "debug": {
+    "indexTip2D": { "x": 0.52, "y": 0.43 },
+    "indexTip3D": { "x": 0.12, "y": 0.34, "z": -0.81 },
+    "depthMeters": 0.81,
+    "fps": 30
+  }
+}
+
