@@ -33,7 +33,7 @@ struct TouchDetectionResult: Codable, Equatable {
 }
 
 final class TouchDetector {
-    private let model: BrainEllipsoidModel
+    private var model: BrainEllipsoidModel
     private let candidateThresholdMeters = 0.05
     private let strongThresholdMeters = 0.03
     private let requiredDurationSec = 0.50
@@ -45,6 +45,11 @@ final class TouchDetector {
 
     init(model: BrainEllipsoidModel = .provisional) {
         self.model = model
+    }
+
+    func updateModel(_ model: BrainEllipsoidModel) {
+        self.model = model
+        resetRegion()
     }
 
     func update(indexTip3D: HandJoint3D?, hasDepth: Bool, timestamp: TimeInterval) -> TouchDetectionResult {

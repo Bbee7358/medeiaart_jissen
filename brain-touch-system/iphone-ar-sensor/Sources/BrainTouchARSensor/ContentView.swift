@@ -33,6 +33,13 @@ struct ContentView: View {
                     DebugRow(label: "touch region", value: sessionModel.touchRegionText)
                     DebugRow(label: "touch distance", value: sessionModel.touchDistanceText)
                     DebugRow(label: "touch duration", value: sessionModel.touchDurationText)
+                    DebugRow(label: "ellipsoid center", value: sessionModel.brainModelCenterText)
+
+                    Button("Set Ellipsoid Center Here") {
+                        sessionModel.setBrainModelCenterToCurrentFinger()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(sessionModel.handPose.indexTip3D == nil)
 
                     if !sessionModel.isDepthAvailable {
                         Text("LiDAR depth is not available")

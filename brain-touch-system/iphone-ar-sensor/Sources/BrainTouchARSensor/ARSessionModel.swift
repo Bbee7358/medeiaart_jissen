@@ -22,6 +22,8 @@ final class ARSessionModel: NSObject, ObservableObject {
     @Published var touchRegionText = "-"
     @Published var touchDistanceText = "-"
     @Published var touchDurationText = "-"
+    @Published var brainModel = BrainEllipsoidModel.provisional
+    @Published var brainModelCenterText = "x 0.000, y 0.000, z -0.800 m"
 
     private var lastFrameTimestamp: TimeInterval?
     private var lastHandPoseTimestamp: TimeInterval = 0
@@ -29,6 +31,20 @@ final class ARSessionModel: NSObject, ObservableObject {
     private let handPoseInterval: TimeInterval = 0.15
     private var indexTip3DSmoother = Point3DSmoother(maxSampleCount: 5)
     private let touchDetector = TouchDetector()
+
+    func setBrainModelCenterToCurrentFinger() {
+        guard let indexTip3D = handPose.indexTip3D else { return }
+        var updated = brainModel
+        updated.center = indexTip3D
+        brainModel = updated
+        touchDetector.updateModel(updated)
+        brainModelCenterText = String(
+            format: "x %.3f, y %.3f, z %.3f m",
+            updated.center.x,
+            updated.center.y,
+            updated.center.z
+        )
+    }
 
     func startSession(on session: ARSession) {
         guard ARWorldTrackingConfiguration.isSupported else {
