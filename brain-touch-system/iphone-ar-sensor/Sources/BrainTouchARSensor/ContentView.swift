@@ -104,6 +104,13 @@ struct ContentView: View {
                         unit: "cm"
                     )
                     CalibrationStepper(
+                        label: "strong touch threshold",
+                        value: calibrationBinding(\.strongTouchThresholdCm),
+                        range: 0.5...20.0,
+                        step: 0.5,
+                        unit: "cm"
+                    )
+                    CalibrationStepper(
                         label: "dwell time",
                         value: calibrationBinding(\.dwellTimeSeconds),
                         range: 0.0...3.0,
@@ -116,6 +123,20 @@ struct ContentView: View {
                         range: 0.0...1.0,
                         step: 0.05,
                         unit: ""
+                    )
+                    CalibrationStepper(
+                        label: "smoothing frames",
+                        value: Binding(
+                            get: { Double(sessionModel.calibration.smoothingFrames) },
+                            set: { newValue in
+                                sessionModel.updateCalibration { calibration in
+                                    calibration.smoothingFrames = Int(newValue.rounded())
+                                }
+                            }
+                        ),
+                        range: 1.0...30.0,
+                        step: 1.0,
+                        unit: "frames"
                     )
 
                     if !sessionModel.isDepthAvailable {
@@ -160,6 +181,7 @@ struct ContentView: View {
                     DebugRow(label: "WebSocket URL", value: webSocketClient.urlString)
                     DebugRow(label: "health status", value: webSocketClient.healthCheckStatus)
                     DebugRow(label: "connection status", value: webSocketClient.connectionStatus)
+                    DebugRow(label: "last settings update", value: sessionModel.lastSettingsUpdateText)
                     DebugRow(label: "last sent timestamp", value: webSocketClient.lastSentTimestampText)
 
                     Text("last health response")
@@ -194,6 +216,11 @@ struct ContentView: View {
         }
         .onChange(of: sessionModel.handPose) { handPose in
             webSocketClient.updateHandPose(handPose)
+        }
+        .onAppear {
+            webSocketClient.onSettingsUpdate = { settings in
+                sessionModel.applyRemoteSettings(settings)
+            }
         }
     }
 

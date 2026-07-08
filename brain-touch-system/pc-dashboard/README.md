@@ -70,14 +70,32 @@ logs/touch-events-2026-07-08.jsonl
 
 ダッシュボードには、展示中に接触判定の目安を確認するためのしきい値調整パネルがあります。
 
-設定値はブラウザの `localStorage` に保存されます。現段階ではPC側での表示・確認用で、iPhone側へはまだ送信しません。
+設定値はブラウザの `localStorage` に保存されます。ダッシュボードがWebSocketサーバーへ接続している場合、変更時に `settings_update` としてiPhone側へ配信されます。
 
 - `touch threshold cm`: 指先と仮脳模型表面の距離が何cm以内なら接触候補と見るか
+- `strong touch threshold cm`: 指先と仮脳模型表面の距離が何cm以内なら強い接触候補と見るか
 - `dwell time seconds`: 同じ条件を何秒以上満たしたら接触確定と見るか
 - `confidence threshold`: 信頼度がどれ以上なら接触確定条件として扱うか
-- `smoothing frames`: 将来の平滑化設定用の管理値。現段階ではPC側保存のみ
+- `smoothing frames`: iPhone側で指先3D座標を移動平均するときに使うフレーム数
 
 パネルでは、現在受信している `distanceCm`, `durationSec`, `confidence` がしきい値を満たしているかを個別に表示します。すべて満たすと「接触確定条件を満たしている」と表示されます。
+
+送信される設定メッセージは以下です。
+
+```json
+{
+  "type": "settings_update",
+  "payload": {
+    "touchThresholdCm": 5,
+    "strongTouchThresholdCm": 3,
+    "dwellTimeSec": 0.5,
+    "confidenceThreshold": 0.75,
+    "smoothingFrames": 5
+  }
+}
+```
+
+WebSocketサーバーは最新の設定を保持し、後から接続したiPhoneにも送ります。不正な `settings_update` は破棄され、サーバー警告としてダッシュボードのConnection Diagnosticsに表示されます。
 
 ## Build
 

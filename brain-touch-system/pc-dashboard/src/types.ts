@@ -27,8 +27,18 @@ export type BrainCalibration = {
   depthMeters: number;
   heightMeters: number;
   touchThresholdCm: number;
+  strongTouchThresholdCm?: number;
   dwellTimeSeconds: number;
   confidenceThreshold: number;
+  smoothingFrames?: number;
+};
+
+export type SettingsUpdatePayload = {
+  touchThresholdCm: number;
+  strongTouchThresholdCm: number;
+  dwellTimeSec: number;
+  confidenceThreshold: number;
+  smoothingFrames: number;
 };
 
 export type TouchEventMessage = {
@@ -92,11 +102,25 @@ export type ServerDiagnostics = {
   lastEventRemote: string | null;
   lastHttpRequestAt: number | null;
   lastHttpRequestRemote: string | null;
+  lastSettingsAt: number | null;
+  lastSettingsRemote: string | null;
   lastWarning: string | null;
 };
 
 export type ServerMessage =
   | TouchEventMessage
+  | {
+      type: "touch_event";
+      payload: TouchEventMessage;
+    }
+  | {
+      type: "settings_update";
+      payload: SettingsUpdatePayload;
+    }
+  | {
+      type: "ping" | "pong";
+      timestamp?: number;
+    }
   | {
       type: "dailyStats";
       payload: DailyStats;

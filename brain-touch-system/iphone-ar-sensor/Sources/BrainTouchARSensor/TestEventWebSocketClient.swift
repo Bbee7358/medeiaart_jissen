@@ -9,12 +9,14 @@ final class TestEventWebSocketClient: NSObject, ObservableObject {
     @Published var healthCheckStatus = "not checked"
     @Published var lastHealthResponse = ""
     @Published var isConnected = false
+    @Published var lastSettingsUpdateText = "-"
 
     private var urlSession: URLSession?
     private var webSocketTask: URLSessionWebSocketTask?
     private var sendTimer: Timer?
     private var connectTimeoutTimer: Timer?
     private var handPose = HandPoseSnapshot.empty
+    var onSettingsUpdate: ((RemoteSettingsUpdatePayload) -> Void)?
 
     func connect() {
         disconnect()
@@ -102,7 +104,7 @@ extension TestEventWebSocketClient: URLSessionWebSocketDelegate {
             self.isConnected = true
             self.connectionStatus = "connected"
             self.startSending()
-            self.listenForCloseOrError()
+            self.listenForMessages()
         }
     }
 
@@ -152,7 +154,8 @@ private extension TestEventWebSocketClient {
         do {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try encoder.encode(event)
+            let envelope = OutgoingTouchEventMessage(type: "touch_event", payload: event)
+            let data = try encoder.encode(envelope)
             guard let json = String(data: data, encoding: .utf8) else {
                 connectionStatus = "encode error"
                 return
@@ -177,15 +180,16 @@ private extension TestEventWebSocketClient {
         }
     }
 
-    func listenForCloseOrError() {
+    func listenForMessages() {
         guard let webSocketTask else { return }
 
         webSocketTask.receive { [weak self] result in
             Task { @MainActor in
                 switch result {
-                case .success:
+                case .success(let message):
+                    self?.handleIncomingMessage(message)
                     guard self?.isConnected == true else { return }
-                    self?.listenForCloseOrError()
+                    self?.listenForMessages()
                 case .failure(let error):
                     self?.connectTimeoutTimer?.invalidate()
                     self?.connectTimeoutTimer = nil
@@ -195,6 +199,59 @@ private extension TestEventWebSocketClient {
                     self?.connectionStatus = "disconnected: \(error.localizedDescription)"
                 }
             }
+        }
+    }
+
+    func handleIncomingMessage(_ message: URLSessionWebSocketTask.Message) {
+        let text: String
+
+        switch message {
+        case .string(let string):
+            text = string
+        case .data(let data):
+            guard let string = String(data: data, encoding: .utf8) else {
+                connectionStatus = "ignored binary message"
+                return
+            }
+            text = string
+        @unknown default:
+            connectionStatus = "ignored unknown message"
+            return
+        }
+
+        guard let data = text.data(using: .utf8) else { return }
+
+        do {
+            let decoder = JSONDecoder()
+            let envelope = try decoder.decode(IncomingEnvelope.self, from: data)
+
+            switch envelope.type {
+            case "settings_update":
+                let settings = try decoder.decode(IncomingSettingsUpdateMessage.self, from: data).payload.sanitized()
+                onSettingsUpdate?(settings)
+                lastSettingsUpdateText = Self.formatTimestamp(Int(Date().timeIntervalSince1970 * 1000))
+            case "ping":
+                sendPong()
+            case "pong":
+                break
+            default:
+                connectionStatus = "ignored message type: \(envelope.type)"
+            }
+        } catch {
+            connectionStatus = "ignored invalid settings/message: \(error.localizedDescription)"
+        }
+    }
+
+    func sendPong() {
+        guard let webSocketTask else { return }
+
+        let message = PingPongMessage(type: "pong")
+        do {
+            let data = try JSONEncoder().encode(message)
+            guard let json = String(data: data, encoding: .utf8) else { return }
+            webSocketTask.send(.string(json)) { _ in }
+        } catch {
+            connectionStatus = "pong encode error"
         }
     }
 
@@ -245,6 +302,47 @@ private extension DateFormatter {
         formatter.dateFormat = "HH:mm:ss.SSS"
         return formatter
     }()
+}
+
+struct RemoteSettingsUpdatePayload: Codable, Equatable {
+    let touchThresholdCm: Double
+    let strongTouchThresholdCm: Double
+    let dwellTimeSec: Double
+    let confidenceThreshold: Double
+    let smoothingFrames: Int
+
+    func sanitized() -> RemoteSettingsUpdatePayload {
+        RemoteSettingsUpdatePayload(
+            touchThresholdCm: Self.clamp(touchThresholdCm, min: 0.5, max: 20.0),
+            strongTouchThresholdCm: Self.clamp(strongTouchThresholdCm, min: 0.5, max: 20.0),
+            dwellTimeSec: Self.clamp(dwellTimeSec, min: 0.0, max: 3.0),
+            confidenceThreshold: Self.clamp(confidenceThreshold, min: 0.0, max: 1.0),
+            smoothingFrames: Int(Self.clamp(Double(smoothingFrames), min: 1, max: 30))
+        )
+    }
+
+    private static func clamp(_ value: Double, min minValue: Double, max maxValue: Double) -> Double {
+        guard value.isFinite else { return minValue }
+        return Swift.max(minValue, Swift.min(maxValue, value))
+    }
+}
+
+private struct IncomingEnvelope: Decodable {
+    let type: String
+}
+
+private struct IncomingSettingsUpdateMessage: Decodable {
+    let type: String
+    let payload: RemoteSettingsUpdatePayload
+}
+
+private struct OutgoingTouchEventMessage: Encodable {
+    let type: String
+    let payload: TouchTestEvent
+}
+
+private struct PingPongMessage: Encodable {
+    let type: String
 }
 
 private struct TouchTestEvent: Encodable {

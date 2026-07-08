@@ -8,8 +8,10 @@ struct BrainCalibration: Codable, Equatable {
     var depthMeters: Double
     var heightMeters: Double
     var touchThresholdCm: Double
+    var strongTouchThresholdCm: Double
     var dwellTimeSeconds: Double
     var confidenceThreshold: Double
+    var smoothingFrames: Int
 
     static let defaults = BrainCalibration(
         centerX: 0,
@@ -19,9 +21,85 @@ struct BrainCalibration: Codable, Equatable {
         depthMeters: 0.25,
         heightMeters: 0.18,
         touchThresholdCm: 5.0,
+        strongTouchThresholdCm: 3.0,
         dwellTimeSeconds: 0.50,
-        confidenceThreshold: 0.55
+        confidenceThreshold: 0.55,
+        smoothingFrames: 5
     )
+
+    init(
+        centerX: Double,
+        centerY: Double,
+        centerZ: Double,
+        widthMeters: Double,
+        depthMeters: Double,
+        heightMeters: Double,
+        touchThresholdCm: Double,
+        strongTouchThresholdCm: Double,
+        dwellTimeSeconds: Double,
+        confidenceThreshold: Double,
+        smoothingFrames: Int
+    ) {
+        self.centerX = centerX
+        self.centerY = centerY
+        self.centerZ = centerZ
+        self.widthMeters = widthMeters
+        self.depthMeters = depthMeters
+        self.heightMeters = heightMeters
+        self.touchThresholdCm = touchThresholdCm
+        self.strongTouchThresholdCm = strongTouchThresholdCm
+        self.dwellTimeSeconds = dwellTimeSeconds
+        self.confidenceThreshold = confidenceThreshold
+        self.smoothingFrames = smoothingFrames
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case centerX
+        case centerY
+        case centerZ
+        case widthMeters
+        case depthMeters
+        case heightMeters
+        case touchThresholdCm
+        case strongTouchThresholdCm
+        case dwellTimeSeconds
+        case dwellTimeSec
+        case confidenceThreshold
+        case smoothingFrames
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = Self.defaults
+        centerX = try container.decodeIfPresent(Double.self, forKey: .centerX) ?? defaults.centerX
+        centerY = try container.decodeIfPresent(Double.self, forKey: .centerY) ?? defaults.centerY
+        centerZ = try container.decodeIfPresent(Double.self, forKey: .centerZ) ?? defaults.centerZ
+        widthMeters = try container.decodeIfPresent(Double.self, forKey: .widthMeters) ?? defaults.widthMeters
+        depthMeters = try container.decodeIfPresent(Double.self, forKey: .depthMeters) ?? defaults.depthMeters
+        heightMeters = try container.decodeIfPresent(Double.self, forKey: .heightMeters) ?? defaults.heightMeters
+        touchThresholdCm = try container.decodeIfPresent(Double.self, forKey: .touchThresholdCm) ?? defaults.touchThresholdCm
+        strongTouchThresholdCm = try container.decodeIfPresent(Double.self, forKey: .strongTouchThresholdCm) ?? defaults.strongTouchThresholdCm
+        dwellTimeSeconds = try container.decodeIfPresent(Double.self, forKey: .dwellTimeSeconds)
+            ?? container.decodeIfPresent(Double.self, forKey: .dwellTimeSec)
+            ?? defaults.dwellTimeSeconds
+        confidenceThreshold = try container.decodeIfPresent(Double.self, forKey: .confidenceThreshold) ?? defaults.confidenceThreshold
+        smoothingFrames = try container.decodeIfPresent(Int.self, forKey: .smoothingFrames) ?? defaults.smoothingFrames
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(centerX, forKey: .centerX)
+        try container.encode(centerY, forKey: .centerY)
+        try container.encode(centerZ, forKey: .centerZ)
+        try container.encode(widthMeters, forKey: .widthMeters)
+        try container.encode(depthMeters, forKey: .depthMeters)
+        try container.encode(heightMeters, forKey: .heightMeters)
+        try container.encode(touchThresholdCm, forKey: .touchThresholdCm)
+        try container.encode(strongTouchThresholdCm, forKey: .strongTouchThresholdCm)
+        try container.encode(dwellTimeSeconds, forKey: .dwellTimeSeconds)
+        try container.encode(confidenceThreshold, forKey: .confidenceThreshold)
+        try container.encode(smoothingFrames, forKey: .smoothingFrames)
+    }
 
     var model: BrainEllipsoidModel {
         BrainEllipsoidModel(
@@ -37,7 +115,7 @@ struct BrainCalibration: Codable, Equatable {
     }
 
     var strongThresholdMeters: Double {
-        max(0.005, touchThresholdMeters * 0.60)
+        strongTouchThresholdCm / 100
     }
 }
 
@@ -72,8 +150,10 @@ enum BrainCalibrationStore {
             depthMeters: clamp(calibration.depthMeters, min: 0.05, max: 1.00),
             heightMeters: clamp(calibration.heightMeters, min: 0.05, max: 1.00),
             touchThresholdCm: clamp(calibration.touchThresholdCm, min: 0.5, max: 20.0),
+            strongTouchThresholdCm: clamp(calibration.strongTouchThresholdCm, min: 0.5, max: 20.0),
             dwellTimeSeconds: clamp(calibration.dwellTimeSeconds, min: 0.0, max: 3.0),
-            confidenceThreshold: clamp(calibration.confidenceThreshold, min: 0.0, max: 1.0)
+            confidenceThreshold: clamp(calibration.confidenceThreshold, min: 0.0, max: 1.0),
+            smoothingFrames: Int(clamp(Double(calibration.smoothingFrames), min: 1, max: 30))
         )
     }
 

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import type { DailyStats, DashboardStatus, PixelPoint, PixelSize, Point2D, Point3D, ServerDiagnostics, ServerMessage, TouchEventMessage } from "./types";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { DailyStats, DashboardStatus, PixelPoint, PixelSize, Point2D, Point3D, ServerDiagnostics, ServerMessage, SettingsUpdatePayload, TouchEventMessage } from "./types";
 
 const WS_URL = "ws://127.0.0.1:8787";
 const MAX_LOGS = 10;
@@ -7,6 +7,7 @@ const THRESHOLDS_STORAGE_KEY = "brain-touch-dashboard.thresholds.v1";
 
 type ThresholdSettings = {
   touchThresholdCm: number;
+  strongTouchThresholdCm: number;
   dwellTimeSeconds: number;
   confidenceThreshold: number;
   smoothingFrames: number;
@@ -14,6 +15,7 @@ type ThresholdSettings = {
 
 const DEFAULT_THRESHOLDS: ThresholdSettings = {
   touchThresholdCm: 5,
+  strongTouchThresholdCm: 3,
   dwellTimeSeconds: 0.5,
   confidenceThreshold: 0.75,
   smoothingFrames: 5
@@ -94,6 +96,7 @@ function loadThresholdSettings(): ThresholdSettings {
     const parsed = JSON.parse(raw) as Partial<ThresholdSettings>;
     return {
       touchThresholdCm: clamp(Number(parsed.touchThresholdCm ?? DEFAULT_THRESHOLDS.touchThresholdCm), 0.5, 30),
+      strongTouchThresholdCm: clamp(Number(parsed.strongTouchThresholdCm ?? DEFAULT_THRESHOLDS.strongTouchThresholdCm), 0.5, 30),
       dwellTimeSeconds: clamp(Number(parsed.dwellTimeSeconds ?? DEFAULT_THRESHOLDS.dwellTimeSeconds), 0, 5),
       confidenceThreshold: clamp(Number(parsed.confidenceThreshold ?? DEFAULT_THRESHOLDS.confidenceThreshold), 0, 1),
       smoothingFrames: Math.round(clamp(Number(parsed.smoothingFrames ?? DEFAULT_THRESHOLDS.smoothingFrames), 1, 30))
@@ -124,6 +127,28 @@ function isServerDiagnosticsMessage(message: ServerMessage): message is { type: 
   return "type" in message && message.type === "serverDiagnostics";
 }
 
+function isTouchEventEnvelope(message: ServerMessage): message is { type: "touch_event"; payload: TouchEventMessage } {
+  return "type" in message && message.type === "touch_event";
+}
+
+function isSettingsUpdateMessage(message: ServerMessage): message is { type: "settings_update"; payload: SettingsUpdatePayload } {
+  return "type" in message && message.type === "settings_update";
+}
+
+function isPingPongMessage(message: ServerMessage): message is { type: "ping" | "pong"; timestamp?: number } {
+  return "type" in message && (message.type === "ping" || message.type === "pong");
+}
+
+function buildSettingsPayload(thresholds: ThresholdSettings): SettingsUpdatePayload {
+  return {
+    touchThresholdCm: thresholds.touchThresholdCm,
+    strongTouchThresholdCm: thresholds.strongTouchThresholdCm,
+    dwellTimeSec: thresholds.dwellTimeSeconds,
+    confidenceThreshold: thresholds.confidenceThreshold,
+    smoothingFrames: thresholds.smoothingFrames
+  };
+}
+
 function App() {
   const [status, setStatus] = useState<DashboardStatus>("connecting");
   const [lastEvent, setLastEvent] = useState<TouchEventMessage | null>(null);
@@ -132,10 +157,33 @@ function App() {
   const [dailyStats, setDailyStats] = useState<DailyStats | null>(null);
   const [serverDiagnostics, setServerDiagnostics] = useState<ServerDiagnostics | null>(null);
   const [thresholds, setThresholds] = useState<ThresholdSettings>(() => loadThresholdSettings());
+  const [lastSettingsSentAt, setLastSettingsSentAt] = useState<number | null>(null);
+  const [settingsSendStatus, setSettingsSendStatus] = useState("not sent");
+  const socketRef = useRef<WebSocket | null>(null);
+  const thresholdsRef = useRef(thresholds);
 
   useEffect(() => {
     window.localStorage.setItem(THRESHOLDS_STORAGE_KEY, JSON.stringify(thresholds));
+    thresholdsRef.current = thresholds;
   }, [thresholds]);
+
+  const settingsPayload = useMemo(() => buildSettingsPayload(thresholds), [thresholds]);
+
+  const sendSettingsUpdate = (payload: SettingsUpdatePayload) => {
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      setSettingsSendStatus("waiting for WebSocket");
+      return;
+    }
+
+    socket.send(JSON.stringify({ type: "settings_update", payload }));
+    setLastSettingsSentAt(Date.now());
+    setSettingsSendStatus("sent to server");
+  };
+
+  useEffect(() => {
+    sendSettingsUpdate(settingsPayload);
+  }, [settingsPayload]);
 
   useEffect(() => {
     let reconnectTimer: number | undefined;
@@ -145,9 +193,11 @@ function App() {
     const connect = () => {
       setStatus("connecting");
       socket = new WebSocket(WS_URL);
+      socketRef.current = socket;
 
       socket.addEventListener("open", () => {
         setStatus("connected");
+        sendSettingsUpdate(buildSettingsPayload(thresholdsRef.current));
       });
 
       socket.addEventListener("message", (event) => {
@@ -164,9 +214,20 @@ function App() {
             return;
           }
 
-          setLastEvent(parsed);
+          if (isSettingsUpdateMessage(parsed)) {
+            setSettingsSendStatus("server has latest settings");
+            return;
+          }
+
+          if (isPingPongMessage(parsed)) {
+            return;
+          }
+
+          const touchEvent = isTouchEventEnvelope(parsed) ? parsed.payload : parsed;
+
+          setLastEvent(touchEvent);
           setLastReceivedAt(Date.now());
-          setLogs((current) => [parsed, ...current].slice(0, MAX_LOGS));
+          setLogs((current) => [touchEvent, ...current].slice(0, MAX_LOGS));
         } catch (error) {
           console.error("Invalid JSON event", error);
         }
@@ -189,6 +250,9 @@ function App() {
       closedByEffect = true;
       if (reconnectTimer) window.clearTimeout(reconnectTimer);
       socket?.close();
+      if (socketRef.current === socket) {
+        socketRef.current = null;
+      }
     };
   }, []);
 
@@ -210,6 +274,9 @@ function App() {
     const distanceOk = lastEvent?.distanceCm !== null && lastEvent?.distanceCm !== undefined
       ? lastEvent.distanceCm <= thresholds.touchThresholdCm
       : false;
+    const strongDistanceOk = lastEvent?.distanceCm !== null && lastEvent?.distanceCm !== undefined
+      ? lastEvent.distanceCm <= thresholds.strongTouchThresholdCm
+      : false;
     const durationOk = lastEvent?.durationSec !== null && lastEvent?.durationSec !== undefined
       ? lastEvent.durationSec >= thresholds.dwellTimeSeconds
       : false;
@@ -217,6 +284,7 @@ function App() {
 
     return {
       distanceOk,
+      strongDistanceOk,
       durationOk,
       confidenceOk,
       allOk: distanceOk && durationOk && confidenceOk
@@ -276,6 +344,15 @@ function App() {
               onChange={(value) => updateThreshold("touchThresholdCm", value)}
             />
             <ThresholdControl
+              label="strong touch threshold cm"
+              value={thresholds.strongTouchThresholdCm}
+              min={0.5}
+              max={30}
+              step={0.5}
+              unit="cm"
+              onChange={(value) => updateThreshold("strongTouchThresholdCm", value)}
+            />
+            <ThresholdControl
               label="dwell time seconds"
               value={thresholds.dwellTimeSeconds}
               min={0}
@@ -312,6 +389,12 @@ function App() {
               ok={thresholdChecks.distanceOk}
             />
             <ThresholdCheck
+              label="strong distance"
+              current={`${formatNumber(lastEvent?.distanceCm)} cm`}
+              target={`<= ${thresholds.strongTouchThresholdCm.toFixed(1)} cm`}
+              ok={thresholdChecks.strongDistanceOk}
+            />
+            <ThresholdCheck
               label="durationSec"
               current={`${formatNumber(lastEvent?.durationSec)} s`}
               target={`>= ${thresholds.dwellTimeSeconds.toFixed(1)} s`}
@@ -322,6 +405,12 @@ function App() {
               current={formatPercent(lastEvent?.confidence)}
               target={`>= ${formatPercent(thresholds.confidenceThreshold)}`}
               ok={thresholdChecks.confidenceOk}
+            />
+            <ThresholdCheck
+              label="settings_update"
+              current={settingsSendStatus}
+              target={lastSettingsSentAt ? formatTime(lastSettingsSentAt) : "not sent yet"}
+              ok={settingsSendStatus.includes("sent") || settingsSendStatus.includes("latest")}
             />
           </div>
         </div>
@@ -421,6 +510,14 @@ function App() {
           <div>
             <dt>last HTTP sender</dt>
             <dd>{serverDiagnostics?.lastHttpRequestRemote ?? "-"}</dd>
+          </div>
+          <div>
+            <dt>last settings update</dt>
+            <dd>{serverDiagnostics?.lastSettingsAt ? formatTime(serverDiagnostics.lastSettingsAt) : "-"}</dd>
+          </div>
+          <div>
+            <dt>last settings sender</dt>
+            <dd>{serverDiagnostics?.lastSettingsRemote ?? "-"}</dd>
           </div>
           <div>
             <dt>Mac IP candidates</dt>

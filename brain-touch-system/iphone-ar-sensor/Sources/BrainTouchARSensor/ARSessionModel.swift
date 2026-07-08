@@ -25,6 +25,7 @@ final class ARSessionModel: NSObject, ObservableObject {
     @Published var calibration: BrainCalibration
     @Published var brainModel: BrainEllipsoidModel
     @Published var brainModelCenterText: String
+    @Published var lastSettingsUpdateText = "-"
 
     private var lastFrameTimestamp: TimeInterval?
     private var lastHandPoseTimestamp: TimeInterval = 0
@@ -60,6 +61,17 @@ final class ARSessionModel: NSObject, ObservableObject {
 
     func resetCalibration() {
         applyCalibration(BrainCalibrationStore.reset(), save: false)
+    }
+
+    func applyRemoteSettings(_ settings: RemoteSettingsUpdatePayload) {
+        var next = calibration
+        next.touchThresholdCm = settings.touchThresholdCm
+        next.strongTouchThresholdCm = settings.strongTouchThresholdCm
+        next.dwellTimeSeconds = settings.dwellTimeSec
+        next.confidenceThreshold = settings.confidenceThreshold
+        next.smoothingFrames = settings.smoothingFrames
+        applyCalibration(next, save: true)
+        lastSettingsUpdateText = DateFormatter.settingsUpdate.string(from: Date())
     }
 
     func startSession(on session: ARSession) {
@@ -332,6 +344,7 @@ private extension ARSessionModel {
         self.calibration = sanitized
         self.brainModel = sanitized.model
         self.brainModelCenterText = Self.formatCenter(sanitized.model.center)
+        self.indexTip3DSmoother = Point3DSmoother(maxSampleCount: sanitized.smoothingFrames)
         self.touchDetector.updateCalibration(sanitized)
         if save {
             BrainCalibrationStore.save(sanitized)
@@ -387,4 +400,12 @@ private struct RecognizedHandJoint {
     let displayPoint: HandJoint2D
     let visionPoint: CGPoint
     let confidence: Float
+}
+
+private extension DateFormatter {
+    static let settingsUpdate: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss.SSS"
+        return formatter
+    }()
 }

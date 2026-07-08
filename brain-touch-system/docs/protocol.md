@@ -2,17 +2,58 @@
 
 ## 概要
 
-iPhone側は、PC側のWebSocketサーバーへタッチ判定イベントをJSONで送信します。
+iPhone側は、PC側のWebSocketサーバーへタッチ判定イベントをJSONで送信します。PC側は、同じWebSocket接続を使ってiPhone側へ判定設定を送信できます。
 
 - Transport: WebSocket
 - Encoding: UTF-8 JSON text
-- Direction: iPhone to PC
+- Direction: bidirectional
 - Schema: `shared/touch-event.schema.json`
 - Version: `0.1.0`
 
 PC側は受信したJSONを表示・ログ保存・演出接続に使います。
 
-## 基本イベント
+## メッセージ種別
+
+すべての新規メッセージは、原則として `type` と `payload` を持つラッパー形式で送ります。
+
+- `touch_event`: iPhoneからPCへ送るタッチ判定イベント
+- `settings_update`: PCからiPhoneへ送る判定設定
+- `ping`: 接続確認
+- `pong`: `ping` への応答
+
+後方互換のため、PCサーバーは `type` なしの従来タッチイベントJSONも受け取れます。
+
+## touch_event
+
+```json
+{
+  "type": "touch_event",
+  "payload": {
+    "version": "0.1.0",
+    "source": "iphone-12-pro",
+    "timestamp": 1720000000000,
+    "handDetected": true,
+    "isTouching": true,
+    "region": "right_temporal_lobe",
+    "regionLabel": "右側頭葉",
+    "surface": "side",
+    "surfaceLabel": "側面",
+    "contactType": "index_fingertip",
+    "distanceCm": 2.8,
+    "durationSec": 0.72,
+    "confidence": 0.84,
+    "debug": {
+      "indexTip2D": { "x": 0.52, "y": 0.43 },
+      "indexTip3D": { "x": 0.12, "y": 0.34, "z": -0.81 },
+      "indexTip3DSpace": "arkit_world",
+      "depthMeters": 0.81,
+      "fps": 30
+    }
+  }
+}
+```
+
+## 従来タッチイベント形式
 
 ```json
 {
@@ -37,6 +78,43 @@ PC側は受信したJSONを表示・ログ保存・演出接続に使います�
     "fps": 30
   }
 }
+```
+
+## settings_update
+
+PCダッシュボードでしきい値を変更すると、PC側WebSocketサーバー経由で接続中のiPhoneへ以下を送ります。サーバーは最新設定を保持し、後から接続したiPhoneにも同じ設定を送ります。
+
+```json
+{
+  "type": "settings_update",
+  "payload": {
+    "touchThresholdCm": 5,
+    "strongTouchThresholdCm": 3,
+    "dwellTimeSec": 0.5,
+    "confidenceThreshold": 0.75,
+    "smoothingFrames": 5
+  }
+}
+```
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `touchThresholdCm` | number | 表面から何cm以内なら接触候補とするか |
+| `strongTouchThresholdCm` | number | 表面から何cm以内なら強い接触候補とするか |
+| `dwellTimeSec` | number | 接触候補が何秒継続したら接触確定とするか |
+| `confidenceThreshold` | number | 接触確定に必要な信頼度。0.0から1.0 |
+| `smoothingFrames` | integer | 指先3D座標の移動平均に使うフレーム数 |
+
+不正な `settings_update` は無視し、PCサーバー側の警告として表示します。
+
+## ping / pong
+
+```json
+{ "type": "ping" }
+```
+
+```json
+{ "type": "pong", "timestamp": 1720000000000 }
 ```
 
 ## フィールド
@@ -124,4 +202,4 @@ TODO:
 
 - 常時送信か状態変化送信かを決める
 - WebSocket再接続仕様を決める
-- PCからiPhoneへ設定を送る双方向プロトコルを検討する
+- `settings_update` のACK仕様を決める

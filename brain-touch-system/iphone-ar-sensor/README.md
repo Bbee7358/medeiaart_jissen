@@ -76,6 +76,7 @@ Brain touch detection uses the camera and LiDAR depth sensor to align the AR sce
 - current timestamp
 - WebSocket URL
 - connection status
+- last settings update
 - last sent timestamp
 - last sent JSON
 
@@ -176,7 +177,9 @@ ipconfig getifaddr en0
 ws://192.168.0.10:8787
 ```
 
-入力後、`Connect` を押すと1秒ごとにテストJSONを送信します。PC側ダッシュボードで受信件数が増え、`logs/touch-events-YYYY-MM-DD.jsonl` に保存されれば通信成功です。
+入力後、`Connect` を押すと1秒ごとに `touch_event` JSONを送信します。PC側ダッシュボードで受信件数が増え、`logs/touch-events-YYYY-MM-DD.jsonl` に保存されれば通信成功です。
+
+PCダッシュボード側でしきい値を変更すると、同じWebSocket経由で `settings_update` がiPhoneへ送られます。iPhone画面の `last settings update` が更新され、Calibration内の `touch threshold`, `strong touch threshold`, `dwell time`, `confidence threshold`, `smoothing frames` に反映されれば受信成功です。受信した設定は `UserDefaults` に保存され、アプリ再起動後も保持されます。
 
 ## 送信するテストJSON
 
@@ -259,8 +262,10 @@ AR画面上では、仮楕円体を半透明の青緑色で表示します。上
 - `brain depth`
 - `brain height`
 - `touch threshold`
+- `strong touch threshold`
 - `dwell time`
 - `confidence threshold`
+- `smoothing frames`
 
 変更した値は `UserDefaults` に保存され、アプリ再起動後も保持されます。`Reset calibration` を押すと初期値に戻ります。現在の設定値はWebSocketの `debug.calibration` にも入ります。
 
@@ -278,9 +283,10 @@ AR画面上では、仮楕円体を半透明の青緑色で表示します。上
 判定ロジックは `TouchDetector` に分けています。`indexTip3D` と楕円体表面の距離を見て、以下のように判定します。
 
 - 表面から `touch threshold` 以内: 接触候補
-- 表面から `touch threshold` の約60%以内: 接触強め
+- 表面から `strong touch threshold` 以内: 接触強め
 - 同じ領域に0.5秒以上留まる: `isTouching: true`
 - `confidence threshold` 以上の信頼度で `isTouching: true`
+- `smoothing frames`: 指先3D座標の移動平均に使うフレーム数
 - 手が高速移動中: `confidence` を下げる
 - 深度または3D座標が取れない: 接触判定しない
 
@@ -307,7 +313,7 @@ LiDAR depth is not available
 ## まだ実装しないこと
 
 - STL / OBJ脳モデルとの本格的な接触判定
-- キャリブレーションUI
+- PCからiPhoneへ脳模型中心・サイズを送る機能
 
 これらは次フェーズで追加します。
 

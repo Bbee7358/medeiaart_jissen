@@ -32,6 +32,14 @@ type TouchEventMessage = {
   [key: string]: unknown;
 };
 
+type SettingsUpdatePayload = {
+  touchThresholdCm: number;
+  strongTouchThresholdCm: number;
+  dwellTimeSec: number;
+  confidenceThreshold: number;
+  smoothingFrames: number;
+};
+
 type DailyStats = {
   date: string;
   receivedCount: number;
@@ -47,6 +55,8 @@ type ServerDiagnostics = {
   lastEventRemote: string | null;
   lastHttpRequestAt: number | null;
   lastHttpRequestRemote: string | null;
+  lastSettingsAt: number | null;
+  lastSettingsRemote: string | null;
   lastWarning: string | null;
 };
 
@@ -65,8 +75,12 @@ let diagnostics: ServerDiagnostics = {
   lastEventRemote: null,
   lastHttpRequestAt: null,
   lastHttpRequestRemote: null,
+  lastSettingsAt: null,
+  lastSettingsRemote: null,
   lastWarning: null
 };
+
+let latestSettings: SettingsUpdatePayload | null = null;
 
 fs.mkdirSync(logsDir, { recursive: true });
 loadTodayStats();
@@ -142,6 +156,12 @@ function broadcast(message: string, sender: WebSocket) {
   }
 }
 
+function sendJson(socket: WebSocket, message: unknown) {
+  if (socket.readyState === socket.OPEN) {
+    socket.send(JSON.stringify(message));
+  }
+}
+
 function broadcastStats() {
   const message = JSON.stringify({
     type: "dailyStats",
@@ -185,6 +205,48 @@ function validateRequiredFields(event: unknown) {
   return requiredFields.filter((field) => !(field in record));
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function isTypedMessage(value: unknown): value is { type: string; payload?: unknown } {
+  return isRecord(value) && typeof value.type === "string";
+}
+
+function validateSettingsPayload(payload: unknown): SettingsUpdatePayload | null {
+  if (!isRecord(payload)) return null;
+
+  const settings = {
+    touchThresholdCm: Number(payload.touchThresholdCm),
+    strongTouchThresholdCm: Number(payload.strongTouchThresholdCm),
+    dwellTimeSec: Number(payload.dwellTimeSec),
+    confidenceThreshold: Number(payload.confidenceThreshold),
+    smoothingFrames: Math.round(Number(payload.smoothingFrames))
+  };
+
+  const values = Object.values(settings);
+  if (values.some((value) => !Number.isFinite(value))) {
+    return null;
+  }
+
+  if (
+    settings.touchThresholdCm < 0.5 ||
+    settings.touchThresholdCm > 30 ||
+    settings.strongTouchThresholdCm < 0.5 ||
+    settings.strongTouchThresholdCm > 30 ||
+    settings.dwellTimeSec < 0 ||
+    settings.dwellTimeSec > 5 ||
+    settings.confidenceThreshold < 0 ||
+    settings.confidenceThreshold > 1 ||
+    settings.smoothingFrames < 1 ||
+    settings.smoothingFrames > 30
+  ) {
+    return null;
+  }
+
+  return settings;
+}
+
 function appendEvent(event: TouchEventMessage) {
   resetStatsIfDateChanged();
 
@@ -207,7 +269,8 @@ function buildHealthPayload() {
     diagnostics: {
       ...diagnostics,
       clientCount: clients.size
-    }
+    },
+    latestSettings
   };
 }
 
@@ -256,19 +319,58 @@ server.on("connection", (socket, request) => {
   console.log(`[ws] connected ${remote}. clients=${clients.size}`);
   socket.send(JSON.stringify({ type: "dailyStats", payload: stats }));
   socket.send(JSON.stringify({ type: "serverDiagnostics", payload: { ...diagnostics, clientCount: clients.size } }));
+  if (latestSettings) {
+    sendJson(socket, { type: "settings_update", payload: latestSettings });
+  }
   broadcastDiagnostics();
 
   socket.on("message", (data) => {
     const message = data.toString();
     console.log(`[ws] message from ${remote}: ${message.slice(0, 200)}`);
-    let event: TouchEventMessage;
+    let parsed: unknown;
 
     try {
-      event = JSON.parse(message) as TouchEventMessage;
+      parsed = JSON.parse(message) as unknown;
     } catch {
       warnAndBroadcast(`[ws] ignored invalid JSON from ${remote}`);
       return;
     }
+
+    if (isTypedMessage(parsed)) {
+      if (parsed.type === "ping") {
+        sendJson(socket, { type: "pong", timestamp: Date.now() });
+        return;
+      }
+
+      if (parsed.type === "pong") {
+        return;
+      }
+
+      if (parsed.type === "settings_update") {
+        const settings = validateSettingsPayload(parsed.payload);
+        if (!settings) {
+          warnAndBroadcast(`[ws] ignored invalid settings_update from ${remote}`);
+          return;
+        }
+
+        latestSettings = settings;
+        diagnostics.lastSettingsAt = Date.now();
+        diagnostics.lastSettingsRemote = remote;
+        diagnostics.lastWarning = null;
+        broadcast(JSON.stringify({ type: "settings_update", payload: settings }), socket);
+        broadcastDiagnostics();
+        return;
+      }
+
+      if (parsed.type === "touch_event") {
+        parsed = parsed.payload;
+      } else {
+        warnAndBroadcast(`[ws] ignored unknown message type from ${remote}: ${parsed.type}`);
+        return;
+      }
+    }
+
+    const event = parsed as TouchEventMessage;
 
     const missingFields = validateRequiredFields(event);
     if (missingFields.length > 0) {
@@ -280,7 +382,7 @@ server.on("connection", (socket, request) => {
     diagnostics.lastEventAt = Date.now();
     diagnostics.lastEventRemote = remote;
     diagnostics.lastWarning = null;
-    broadcast(message, socket);
+    broadcast(JSON.stringify({ type: "touch_event", payload: event }), socket);
     broadcastStats();
     broadcastDiagnostics();
   });
