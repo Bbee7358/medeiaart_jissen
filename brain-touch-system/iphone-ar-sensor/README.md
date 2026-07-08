@@ -300,7 +300,19 @@ AR画面上では、仮楕円体を半透明の青緑色で表示します。上
 - `center`: 中央
 - `unknown`: 不明
 
-送信JSONでは、`isTouching`, `region`, `regionLabel`, `surface`, `surfaceLabel`, `distanceCm`, `durationSec`, `confidence` がこの仮楕円体判定に基づいて更新されます。これは実際の脳部位ラベルではありません。最終的には `TouchDetector` の内部を、STL / OBJ脳モデルと部位ラベルの距離判定に差し替える想定です。
+送信JSONでは、`isTouching`, `region`, `regionLabel`, `surface`, `surfaceLabel`, `distanceCm`, `durationSec`, `confidence` がこの仮楕円体判定に基づいて更新されます。これは実際の脳部位ラベルではありません。
+
+## 将来のメッシュ判定
+
+現在は楕円体判定です。将来は、3Dプリントに使ったSTL / OBJ脳モデルを読み込み、指先3D点とメッシュ表面の最近傍点から接触距離と部位ラベルを返すメッシュ判定へ移行します。
+
+その準備として、以下のインターフェースだけを追加しています。
+
+- `BrainSurfaceModel`
+- `NearestSurfaceHit`
+- `BrainRegionResolver`
+
+現段階では、実際のSTL / OBJパーサーやメッシュ最近傍探索は実装していません。楕円体判定とメッシュ判定は、将来的に `ellipsoid`, `mesh`, `hybrid` のように切り替えられる設計にします。詳細は `../docs/mesh-touch-detection.md` を参照してください。
 
 ## LiDAR非対応端末の場合
 
