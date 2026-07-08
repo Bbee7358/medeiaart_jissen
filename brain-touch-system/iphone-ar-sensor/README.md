@@ -231,6 +231,38 @@ Vision座標、ARKitカメラ画像、LiDAR深度マップは、実機の向き�
 
 `indexTip3D` は直近5サンプルの移動平均で平滑化しています。深度が取れない、または手が検出できない場合は `null` になります。
 
+## 仮の脳模型タッチ判定
+
+本物のSTL / OBJ脳モデルへ進む前の仮判定として、アプリ内に楕円体の脳模型を置いています。
+
+現在の仮モデル:
+
+- 中心座標: `BrainEllipsoidModel.provisional.center`
+- 幅: `0.35m`
+- 奥行き: `0.25m`
+- 高さ: `0.18m`
+- 形状: 楕円体
+
+判定ロジックは `TouchDetector` に分けています。`indexTip3D` と楕円体表面の距離を見て、以下のように判定します。
+
+- 表面から5cm以内: 接触候補
+- 表面から3cm以内: 接触強め
+- 同じ領域に0.5秒以上留まる: `isTouching: true`
+- 手が高速移動中: `confidence` を下げる
+- 深度または3D座標が取れない: 接触判定しない
+
+仮領域:
+
+- `top`: 上面
+- `left_side`: 左側面
+- `right_side`: 右側面
+- `front`: 前方
+- `back`: 後方
+- `center`: 中央
+- `unknown`: 不明
+
+送信JSONでは、`isTouching`, `region`, `regionLabel`, `surface`, `surfaceLabel`, `distanceCm`, `durationSec`, `confidence` がこの仮楕円体判定に基づいて更新されます。これは実際の脳部位ラベルではありません。最終的には `TouchDetector` の内部を、STL / OBJ脳モデルと部位ラベルの距離判定に差し替える想定です。
+
 ## LiDAR非対応端末の場合
 
 LiDAR非対応端末やシミュレータでは、画面に以下が表示されます。

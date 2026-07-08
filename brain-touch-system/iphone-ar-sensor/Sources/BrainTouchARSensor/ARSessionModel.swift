@@ -18,12 +18,17 @@ final class ARSessionModel: NSObject, ObservableObject {
     @Published var handConfidenceText = "-"
     @Published var depthSampleText = "-"
     @Published var depthConfidenceText = "-"
+    @Published var touchStatusText = "-"
+    @Published var touchRegionText = "-"
+    @Published var touchDistanceText = "-"
+    @Published var touchDurationText = "-"
 
     private var lastFrameTimestamp: TimeInterval?
     private var lastHandPoseTimestamp: TimeInterval = 0
     private var smoothedFrameRate: Double = 0
     private let handPoseInterval: TimeInterval = 0.15
     private var indexTip3DSmoother = Point3DSmoother(maxSampleCount: 5)
+    private let touchDetector = TouchDetector()
 
     func startSession(on session: ARSession) {
         guard ARWorldTrackingConfiguration.isSupported else {
@@ -150,6 +155,7 @@ private extension ARSessionModel {
 
             guard let observation = request.results?.first else {
                 indexTip3DSmoother.reset()
+                _ = touchDetector.update(indexTip3D: nil, hasDepth: false, timestamp: timestamp)
                 updateHandPose(.empty)
                 return
             }
@@ -159,10 +165,12 @@ private extension ARSessionModel {
                 depthData: depthData,
                 depthSource: depthSource,
                 capturedImage: pixelBuffer,
-                camera: camera
+                camera: camera,
+                timestamp: timestamp
             ))
         } catch {
             indexTip3DSmoother.reset()
+            _ = touchDetector.update(indexTip3D: nil, hasDepth: false, timestamp: timestamp)
             updateHandPose(.empty)
         }
     }
@@ -177,6 +185,12 @@ private extension ARSessionModel {
             String(format: "x %.3f, y %.3f, z %.3f m", $0.x, $0.y, $0.z)
         } ?? "-"
         handConfidenceText = String(format: "%.2f", snapshot.confidence)
+        touchStatusText = snapshot.touch.isTouching
+            ? "touching"
+            : (snapshot.touch.isStrongCandidate ? "strong candidate" : (snapshot.touch.isCandidate ? "candidate" : "none"))
+        touchRegionText = snapshot.touch.regionLabel
+        touchDistanceText = snapshot.touch.distanceCm.map { String(format: "%.1fcm", $0) } ?? "-"
+        touchDurationText = String(format: "%.2fs", snapshot.touch.durationSec)
         if let debug = snapshot.depthDebug,
            let pixel = debug.depthPixel,
            let size = debug.depthMapSize {
@@ -193,7 +207,8 @@ private extension ARSessionModel {
         depthData: ARDepthData?,
         depthSource: String,
         capturedImage: CVPixelBuffer,
-        camera: ARCamera
+        camera: ARCamera,
+        timestamp: TimeInterval
     ) -> HandPoseSnapshot {
         let wrist = recognizedJoint(.wrist, from: observation)
         let thumbTip = recognizedJoint(.thumbTip, from: observation)
@@ -218,6 +233,11 @@ private extension ARSessionModel {
             camera: camera
         )
         let smoothedIndexTip3D = indexTip3DSmoother.append(rawIndexTip3D)
+        let touch = touchDetector.update(
+            indexTip3D: smoothedIndexTip3D,
+            hasDepth: depthSample != nil,
+            timestamp: timestamp
+        )
         let depthDebug = depthSample.map {
             DepthSamplingDebug(
                 depthSample2D: $0.sampleDisplayPoint,
@@ -247,7 +267,8 @@ private extension ARSessionModel {
             indexTip3D: smoothedIndexTip3D,
             indexTip3DSpace: PointUnprojector.outputCoordinateSpace,
             depthDebug: depthDebug,
-            confidence: detected ? confidence : 0
+            touch: touch,
+            confidence: detected ? max(confidence, touch.confidence) : 0
         )
     }
 

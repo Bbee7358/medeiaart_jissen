@@ -252,21 +252,29 @@ private struct TouchTestEvent: Encodable {
     let source = "iphone-12-pro"
     let timestamp: Int
     let handDetected: Bool
-    let isTouching = false
-    let region: String? = nil
-    let regionLabel: String? = nil
-    let surface: String? = nil
-    let surfaceLabel: String? = nil
-    let contactType = "unknown"
-    let distanceCm: Double? = nil
-    let durationSec = 0.0
+    let isTouching: Bool
+    let region: String?
+    let regionLabel: String?
+    let surface: String?
+    let surfaceLabel: String?
+    let contactType: String
+    let distanceCm: Double?
+    let durationSec: Double
     let confidence: Double
     let debug: TouchTestDebug
 
     init(timestamp: Int, handPose: HandPoseSnapshot) {
         self.timestamp = timestamp
         self.handDetected = handPose.handDetected
-        self.confidence = handPose.confidence
+        self.isTouching = handPose.touch.isTouching
+        self.region = handPose.touch.region
+        self.regionLabel = handPose.touch.regionLabel
+        self.surface = handPose.touch.surface
+        self.surfaceLabel = handPose.touch.surfaceLabel
+        self.contactType = handPose.handDetected ? "index_fingertip" : "unknown"
+        self.distanceCm = handPose.touch.distanceCm
+        self.durationSec = handPose.touch.durationSec
+        self.confidence = handPose.touch.isCandidate ? handPose.touch.confidence : handPose.confidence
         self.debug = TouchTestDebug(handPose: handPose)
     }
 
@@ -322,6 +330,9 @@ private struct TouchTestDebug: Encodable {
     let depthSource: String?
     let depthStrategy: String?
     let depthSampleCount: Int?
+    let touchCandidate: Bool
+    let strongTouchCandidate: Bool
+    let fingerSpeedMetersPerSec: Double?
     let fps = 30.0
 
     init(handPose: HandPoseSnapshot) {
@@ -340,6 +351,9 @@ private struct TouchTestDebug: Encodable {
         self.depthSource = handPose.depthDebug?.depthSource
         self.depthStrategy = handPose.depthDebug?.depthStrategy
         self.depthSampleCount = handPose.depthDebug?.depthSampleCount
+        self.touchCandidate = handPose.touch.isCandidate
+        self.strongTouchCandidate = handPose.touch.isStrongCandidate
+        self.fingerSpeedMetersPerSec = handPose.touch.speedMetersPerSec
     }
 
     enum CodingKeys: String, CodingKey {
@@ -358,6 +372,9 @@ private struct TouchTestDebug: Encodable {
         case depthSource
         case depthStrategy
         case depthSampleCount
+        case touchCandidate
+        case strongTouchCandidate
+        case fingerSpeedMetersPerSec
         case fps
     }
 
@@ -378,6 +395,9 @@ private struct TouchTestDebug: Encodable {
         try container.encodeOptionalAsNull(depthSource, forKey: .depthSource)
         try container.encodeOptionalAsNull(depthStrategy, forKey: .depthStrategy)
         try container.encodeOptionalAsNull(depthSampleCount, forKey: .depthSampleCount)
+        try container.encode(touchCandidate, forKey: .touchCandidate)
+        try container.encode(strongTouchCandidate, forKey: .strongTouchCandidate)
+        try container.encodeOptionalAsNull(fingerSpeedMetersPerSec, forKey: .fingerSpeedMetersPerSec)
         try container.encode(fps, forKey: .fps)
     }
 }

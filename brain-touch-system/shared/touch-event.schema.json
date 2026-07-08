@@ -54,6 +54,12 @@
         "right_occipital_lobe",
         "cerebellum",
         "brainstem",
+        "top",
+        "left_side",
+        "right_side",
+        "front",
+        "back",
+        "center",
         "unknown",
         null
       ]
@@ -71,6 +77,7 @@
         "top",
         "bottom",
         "side",
+        "center",
         "unknown",
         null
       ]
@@ -176,6 +183,16 @@
         },
         "depthSampleCount": {
           "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "touchCandidate": {
+          "type": "boolean"
+        },
+        "strongTouchCandidate": {
+          "type": "boolean"
+        },
+        "fingerSpeedMetersPerSec": {
+          "type": ["number", "null"],
           "minimum": 0
         },
         "fps": {

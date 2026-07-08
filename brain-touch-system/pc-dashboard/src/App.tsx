@@ -317,6 +317,14 @@ function App() {
               <dd>{lastEvent ? String(lastEvent.isTouching) : "-"}</dd>
             </div>
             <div>
+              <dt>touchCandidate</dt>
+              <dd>{lastEvent ? String(lastEvent.debug.touchCandidate ?? false) : "-"}</dd>
+            </div>
+            <div>
+              <dt>strongCandidate</dt>
+              <dd>{lastEvent ? String(lastEvent.debug.strongTouchCandidate ?? false) : "-"}</dd>
+            </div>
+            <div>
               <dt>regionLabel</dt>
               <dd>{lastEvent?.regionLabel ?? "-"}</dd>
             </div>
@@ -349,6 +357,10 @@ function App() {
             <div>
               <dt>depthMeters</dt>
               <dd>{formatNumber(lastEvent?.debug.depthMeters)} m</dd>
+            </div>
+            <div>
+              <dt>fingerSpeed</dt>
+              <dd>{formatNumber(lastEvent?.debug.fingerSpeedMetersPerSec)} m/s</dd>
             </div>
             <div>
               <dt>fps</dt>
@@ -403,6 +415,14 @@ function App() {
             <div>
               <dt>depth strategy</dt>
               <dd>{lastEvent?.debug.depthStrategy ?? "-"}</dd>
+            </div>
+            <div>
+              <dt>touch candidate</dt>
+              <dd>{lastEvent ? String(lastEvent.debug.touchCandidate ?? false) : "-"}</dd>
+            </div>
+            <div>
+              <dt>strong candidate</dt>
+              <dd>{lastEvent ? String(lastEvent.debug.strongTouchCandidate ?? false) : "-"}</dd>
             </div>
             <div>
               <dt>source</dt>

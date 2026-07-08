@@ -29,6 +29,10 @@ struct ContentView: View {
                     DebugRow(label: "depth sample", value: sessionModel.depthSampleText)
                     DebugRow(label: "depth confidence", value: sessionModel.depthConfidenceText)
                     DebugRow(label: "confidence", value: sessionModel.handConfidenceText)
+                    DebugRow(label: "touch status", value: sessionModel.touchStatusText)
+                    DebugRow(label: "touch region", value: sessionModel.touchRegionText)
+                    DebugRow(label: "touch distance", value: sessionModel.touchDistanceText)
+                    DebugRow(label: "touch duration", value: sessionModel.touchDurationText)
 
                     if !sessionModel.isDepthAvailable {
                         Text("LiDAR depth is not available")

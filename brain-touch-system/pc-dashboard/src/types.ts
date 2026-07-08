@@ -55,6 +55,9 @@ export type TouchEventMessage = {
     depthSource?: string | null;
     depthStrategy?: string | null;
     depthSampleCount?: number | null;
+    touchCandidate?: boolean;
+    strongTouchCandidate?: boolean;
+    fingerSpeedMetersPerSec?: number | null;
     fps: number;
   };
 };
