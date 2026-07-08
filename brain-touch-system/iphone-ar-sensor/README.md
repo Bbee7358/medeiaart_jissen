@@ -203,6 +203,7 @@ Visionで手を検出できた場合は、以下も送信します。
 - `debug.depthPixel`
 - `debug.depthConfidenceRaw`
 - `debug.depthStrategy`
+- `debug.calibration`
 
 ## 指先3D座標
 
@@ -235,9 +236,9 @@ Vision座標、ARKitカメラ画像、LiDAR深度マップは、実機の向き�
 
 本物のSTL / OBJ脳モデルへ進む前の仮判定として、アプリ内に楕円体の脳模型を置いています。
 
-現在の仮モデル:
+初期状態の仮モデル:
 
-- 中心座標: `BrainEllipsoidModel.provisional.center`
+- 中心座標: `BrainCalibration.defaults`
 - 幅: `0.35m`
 - 奥行き: `0.25m`
 - 高さ: `0.18m`
@@ -245,13 +246,41 @@ Vision座標、ARKitカメラ画像、LiDAR深度マップは、実機の向き�
 
 AR画面上では、仮楕円体を半透明の青緑色で表示します。上面・左右・前方の目安として小さな色付きマーカーも表示します。
 
-実空間と仮楕円体の位置が合っていない場合は、指先を置きたい中心位置に持っていき、`Set Ellipsoid Center Here` を押してください。これは暫定キャリブレーションで、現在の `indexTip3D` を楕円体中心として記録します。
+実空間と仮楕円体の位置が合っていない場合は、指先を置きたい中心位置に持っていき、`Set Center Here` を押してください。現在の `indexTip3D` を楕円体中心として記録します。
+
+## キャリブレーション
+
+デバッグ画面の `Calibration` セクションで以下を調整できます。
+
+- `brain center x`
+- `brain center y`
+- `brain center z`
+- `brain width`
+- `brain depth`
+- `brain height`
+- `touch threshold`
+- `dwell time`
+- `confidence threshold`
+
+変更した値は `UserDefaults` に保存され、アプリ再起動後も保持されます。`Reset calibration` を押すと初期値に戻ります。現在の設定値はWebSocketの `debug.calibration` にも入ります。
+
+最初のキャリブレーション手順:
+
+1. iPhoneを展示上部に固定する
+2. 脳模型を真下に置く
+3. アプリを起動する
+4. 手で脳の上面中央に触れる
+5. `Set Center Here` を押して楕円体中心の初期位置を合わせる
+6. 表示される `touch distance` と `touch region` を見ながら中心・サイズを調整する
+7. 左側面・右側面・前方・後方も触って確認する
+8. PCダッシュボードで `regionLabel`, `distanceCm`, `isTouching`, `confidence` が安定して表示されるか確認する
 
 判定ロジックは `TouchDetector` に分けています。`indexTip3D` と楕円体表面の距離を見て、以下のように判定します。
 
-- 表面から5cm以内: 接触候補
-- 表面から3cm以内: 接触強め
+- 表面から `touch threshold` 以内: 接触候補
+- 表面から `touch threshold` の約60%以内: 接触強め
 - 同じ領域に0.5秒以上留まる: `isTouching: true`
+- `confidence threshold` 以上の信頼度で `isTouching: true`
 - 手が高速移動中: `confidence` を下げる
 - 深度または3D座標が取れない: 接触判定しない
 
@@ -277,7 +306,7 @@ LiDAR depth is not available
 
 ## まだ実装しないこと
 
-- 脳模型との接触判定
+- STL / OBJ脳モデルとの本格的な接触判定
 - キャリブレーションUI
 
 これらは次フェーズで追加します。

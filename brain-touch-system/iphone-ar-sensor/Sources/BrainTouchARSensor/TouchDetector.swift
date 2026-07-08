@@ -34,21 +34,21 @@ struct TouchDetectionResult: Codable, Equatable {
 
 final class TouchDetector {
     private var model: BrainEllipsoidModel
-    private let candidateThresholdMeters = 0.05
-    private let strongThresholdMeters = 0.03
-    private let requiredDurationSec = 0.50
+    private var calibration: BrainCalibration
 
     private var activeRegion: String?
     private var activeRegionStartedAt: TimeInterval?
     private var lastPoint: HandJoint3D?
     private var lastTimestamp: TimeInterval?
 
-    init(model: BrainEllipsoidModel = .provisional) {
-        self.model = model
+    init(calibration: BrainCalibration = .defaults) {
+        self.calibration = calibration
+        self.model = calibration.model
     }
 
-    func updateModel(_ model: BrainEllipsoidModel) {
-        self.model = model
+    func updateCalibration(_ calibration: BrainCalibration) {
+        self.calibration = calibration
+        self.model = calibration.model
         resetRegion()
     }
 
@@ -62,21 +62,23 @@ final class TouchDetector {
         let speed = updateMotion(point: point, timestamp: timestamp)
         let surface = nearestSurface(to: point)
         let absDistance = abs(surface.signedDistanceMeters)
-        let isCandidate = absDistance <= candidateThresholdMeters
-        let isStrongCandidate = absDistance <= strongThresholdMeters
+        let isCandidate = absDistance <= calibration.touchThresholdMeters
+        let isStrongCandidate = absDistance <= calibration.strongThresholdMeters
 
         let duration = updateDuration(
             region: surface.region,
             isCandidate: isCandidate,
             timestamp: timestamp
         )
-        let isTouching = isCandidate && duration >= requiredDurationSec
         let confidence = confidenceScore(
             distanceMeters: absDistance,
             isCandidate: isCandidate,
             durationSec: duration,
             speedMetersPerSec: speed
         )
+        let isTouching = isCandidate
+            && duration >= calibration.dwellTimeSeconds
+            && confidence >= calibration.confidenceThreshold
 
         return TouchDetectionResult(
             isCandidate: isCandidate,
@@ -205,8 +207,10 @@ final class TouchDetector {
     ) -> Double {
         guard isCandidate else { return 0 }
 
-        let distanceScore = 1.0 - min(distanceMeters / candidateThresholdMeters, 1.0)
-        let durationScore = min(durationSec / requiredDurationSec, 1.0)
+        let distanceScore = 1.0 - min(distanceMeters / calibration.touchThresholdMeters, 1.0)
+        let durationScore = calibration.dwellTimeSeconds <= 0
+            ? 1.0
+            : min(durationSec / calibration.dwellTimeSeconds, 1.0)
         let speed = speedMetersPerSec ?? 0
         let speedPenalty = speed <= 0.20 ? 1.0 : max(0.35, 1.0 - ((speed - 0.20) / 0.80))
         return min(max((distanceScore * 0.65 + durationScore * 0.35) * speedPenalty, 0), 1)

@@ -30,6 +30,10 @@ struct ARViewContainer: UIViewRepresentable {
     final class Coordinator {
         private var anchor: AnchorEntity?
         private var modelEntity: ModelEntity?
+        private var topMarker: ModelEntity?
+        private var leftMarker: ModelEntity?
+        private var rightMarker: ModelEntity?
+        private var frontMarker: ModelEntity?
 
         func installBrainModel(in arView: ARView, model: BrainEllipsoidModel) {
             let anchor = AnchorEntity(world: SIMD3<Float>(
@@ -53,22 +57,22 @@ struct ARViewContainer: UIViewRepresentable {
                 Float(model.depthMeters)
             )
 
-            addRegionMarker(
+            topMarker = addRegionMarker(
                 to: anchor,
                 offset: SIMD3<Float>(0, Float(model.radiusY), 0),
                 color: .systemYellow
             )
-            addRegionMarker(
+            leftMarker = addRegionMarker(
                 to: anchor,
                 offset: SIMD3<Float>(-Float(model.radiusX), 0, 0),
                 color: .systemBlue
             )
-            addRegionMarker(
+            rightMarker = addRegionMarker(
                 to: anchor,
                 offset: SIMD3<Float>(Float(model.radiusX), 0, 0),
                 color: .systemRed
             )
-            addRegionMarker(
+            frontMarker = addRegionMarker(
                 to: anchor,
                 offset: SIMD3<Float>(0, 0, -Float(model.radiusZ)),
                 color: .systemGreen
@@ -91,9 +95,13 @@ struct ARViewContainer: UIViewRepresentable {
                 Float(model.heightMeters),
                 Float(model.depthMeters)
             )
+            topMarker?.position = SIMD3<Float>(0, Float(model.radiusY), 0)
+            leftMarker?.position = SIMD3<Float>(-Float(model.radiusX), 0, 0)
+            rightMarker?.position = SIMD3<Float>(Float(model.radiusX), 0, 0)
+            frontMarker?.position = SIMD3<Float>(0, 0, -Float(model.radiusZ))
         }
 
-        private func addRegionMarker(to anchor: AnchorEntity, offset: SIMD3<Float>, color: UIColor) {
+        private func addRegionMarker(to anchor: AnchorEntity, offset: SIMD3<Float>, color: UIColor) -> ModelEntity {
             var material = SimpleMaterial()
             material.color = .init(tint: color.withAlphaComponent(0.78), texture: nil)
             let marker = ModelEntity(
@@ -102,6 +110,7 @@ struct ARViewContainer: UIViewRepresentable {
             )
             marker.position = offset
             anchor.addChild(marker)
+            return marker
         }
     }
 }

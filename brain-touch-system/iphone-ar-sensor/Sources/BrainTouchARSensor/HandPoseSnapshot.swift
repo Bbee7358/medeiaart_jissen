@@ -68,6 +68,7 @@ struct HandPoseSnapshot: Equatable {
     let indexTip3DSpace: String
     let depthDebug: DepthSamplingDebug?
     let touch: TouchDetectionResult
+    let calibration: BrainCalibration
     let confidence: Double
 
     static let empty = HandPoseSnapshot(
@@ -85,6 +86,7 @@ struct HandPoseSnapshot: Equatable {
         indexTip3DSpace: "arkit_world",
         depthDebug: nil,
         touch: .empty,
+        calibration: .defaults,
         confidence: 0
     )
 }

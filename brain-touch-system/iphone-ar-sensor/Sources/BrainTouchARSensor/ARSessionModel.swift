@@ -22,28 +22,44 @@ final class ARSessionModel: NSObject, ObservableObject {
     @Published var touchRegionText = "-"
     @Published var touchDistanceText = "-"
     @Published var touchDurationText = "-"
-    @Published var brainModel = BrainEllipsoidModel.provisional
-    @Published var brainModelCenterText = "x 0.000, y 0.000, z -0.800 m"
+    @Published var calibration: BrainCalibration
+    @Published var brainModel: BrainEllipsoidModel
+    @Published var brainModelCenterText: String
 
     private var lastFrameTimestamp: TimeInterval?
     private var lastHandPoseTimestamp: TimeInterval = 0
     private var smoothedFrameRate: Double = 0
     private let handPoseInterval: TimeInterval = 0.15
     private var indexTip3DSmoother = Point3DSmoother(maxSampleCount: 5)
-    private let touchDetector = TouchDetector()
+    private let touchDetector: TouchDetector
+
+    override init() {
+        let loadedCalibration = BrainCalibrationStore.load()
+        self.calibration = loadedCalibration
+        self.brainModel = loadedCalibration.model
+        self.brainModelCenterText = Self.formatCenter(loadedCalibration.model.center)
+        self.touchDetector = TouchDetector(calibration: loadedCalibration)
+        super.init()
+        self.handPose = makeEmptySnapshot()
+    }
 
     func setBrainModelCenterToCurrentFinger() {
         guard let indexTip3D = handPose.indexTip3D else { return }
-        var updated = brainModel
-        updated.center = indexTip3D
-        brainModel = updated
-        touchDetector.updateModel(updated)
-        brainModelCenterText = String(
-            format: "x %.3f, y %.3f, z %.3f m",
-            updated.center.x,
-            updated.center.y,
-            updated.center.z
-        )
+        updateCalibration { calibration in
+            calibration.centerX = indexTip3D.x
+            calibration.centerY = indexTip3D.y
+            calibration.centerZ = indexTip3D.z
+        }
+    }
+
+    func updateCalibration(_ update: (inout BrainCalibration) -> Void) {
+        var next = calibration
+        update(&next)
+        applyCalibration(next, save: true)
+    }
+
+    func resetCalibration() {
+        applyCalibration(BrainCalibrationStore.reset(), save: false)
     }
 
     func startSession(on session: ARSession) {
@@ -172,7 +188,7 @@ private extension ARSessionModel {
             guard let observation = request.results?.first else {
                 indexTip3DSmoother.reset()
                 _ = touchDetector.update(indexTip3D: nil, hasDepth: false, timestamp: timestamp)
-                updateHandPose(.empty)
+                updateHandPose(makeEmptySnapshot())
                 return
             }
 
@@ -187,7 +203,7 @@ private extension ARSessionModel {
         } catch {
             indexTip3DSmoother.reset()
             _ = touchDetector.update(indexTip3D: nil, hasDepth: false, timestamp: timestamp)
-            updateHandPose(.empty)
+            updateHandPose(makeEmptySnapshot())
         }
     }
 
@@ -205,8 +221,9 @@ private extension ARSessionModel {
             ? "touching"
             : (snapshot.touch.isStrongCandidate ? "strong candidate" : (snapshot.touch.isCandidate ? "candidate" : "none"))
         touchRegionText = snapshot.touch.regionLabel
-        touchDistanceText = snapshot.touch.distanceCm.map { String(format: "%.1fcm", $0) } ?? "-"
-        touchDurationText = String(format: "%.2fs", snapshot.touch.durationSec)
+            touchDistanceText = snapshot.touch.distanceCm.map { String(format: "%.1fcm", $0) } ?? "-"
+            touchDurationText = String(format: "%.2fs", snapshot.touch.durationSec)
+        brainModelCenterText = Self.formatCenter(calibration.model.center)
         if let debug = snapshot.depthDebug,
            let pixel = debug.depthPixel,
            let size = debug.depthMapSize {
@@ -284,8 +301,41 @@ private extension ARSessionModel {
             indexTip3DSpace: PointUnprojector.outputCoordinateSpace,
             depthDebug: depthDebug,
             touch: touch,
+            calibration: calibration,
             confidence: detected ? max(confidence, touch.confidence) : 0
         )
+    }
+
+    func makeEmptySnapshot() -> HandPoseSnapshot {
+        HandPoseSnapshot(
+            handDetected: false,
+            wrist: nil,
+            fingerTips: FingerTips2D(
+                thumbTip: nil,
+                indexTip: nil,
+                middleTip: nil,
+                ringTip: nil,
+                littleTip: nil
+            ),
+            indexTipDepthMeters: nil,
+            indexTip3D: nil,
+            indexTip3DSpace: PointUnprojector.outputCoordinateSpace,
+            depthDebug: nil,
+            touch: .empty,
+            calibration: calibration,
+            confidence: 0
+        )
+    }
+
+    func applyCalibration(_ calibration: BrainCalibration, save: Bool) {
+        let sanitized = BrainCalibrationStore.sanitized(calibration)
+        self.calibration = sanitized
+        self.brainModel = sanitized.model
+        self.brainModelCenterText = Self.formatCenter(sanitized.model.center)
+        self.touchDetector.updateCalibration(sanitized)
+        if save {
+            BrainCalibrationStore.save(sanitized)
+        }
     }
 
     func recognizedJoint(
@@ -307,6 +357,12 @@ private extension ARSessionModel {
     func visionImageOrientation() -> CGImagePropertyOrientation {
         // TODO: Update this if the installation uses landscape mounting.
         .right
+    }
+}
+
+private extension ARSessionModel {
+    static func formatCenter(_ center: HandJoint3D) -> String {
+        String(format: "x %.3f, y %.3f, z %.3f m", center.x, center.y, center.z)
     }
 }
 

@@ -195,6 +195,9 @@
           "type": ["number", "null"],
           "minimum": 0
         },
+        "calibration": {
+          "$ref": "#/$defs/brainCalibration"
+        },
         "fps": {
           "type": "number",
           "minimum": 0
@@ -263,6 +266,57 @@
         },
         "z": {
           "type": "number"
+        }
+      }
+    },
+    "brainCalibration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "centerX",
+        "centerY",
+        "centerZ",
+        "widthMeters",
+        "depthMeters",
+        "heightMeters",
+        "touchThresholdCm",
+        "dwellTimeSeconds",
+        "confidenceThreshold"
+      ],
+      "properties": {
+        "centerX": {
+          "type": "number"
+        },
+        "centerY": {
+          "type": "number"
+        },
+        "centerZ": {
+          "type": "number"
+        },
+        "widthMeters": {
+          "type": "number",
+          "minimum": 0.05
+        },
+        "depthMeters": {
+          "type": "number",
+          "minimum": 0.05
+        },
+        "heightMeters": {
+          "type": "number",
+          "minimum": 0.05
+        },
+        "touchThresholdCm": {
+          "type": "number",
+          "minimum": 0.5
+        },
+        "dwellTimeSeconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "confidenceThreshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
         }
       }
     }

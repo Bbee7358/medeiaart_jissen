@@ -16,6 +16,7 @@
 		110000000000000000000007 /* DepthSampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000109 /* DepthSampler.swift */; };
 		110000000000000000000008 /* PointUnprojector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000110 /* PointUnprojector.swift */; };
 		110000000000000000000009 /* TouchDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000111 /* TouchDetector.swift */; };
+		110000000000000000000010 /* BrainCalibration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000112 /* BrainCalibration.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -30,6 +31,7 @@
 		110000000000000000000109 /* DepthSampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DepthSampler.swift; sourceTree = "<group>"; };
 		110000000000000000000110 /* PointUnprojector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PointUnprojector.swift; sourceTree = "<group>"; };
 		110000000000000000000111 /* TouchDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchDetector.swift; sourceTree = "<group>"; };
+		110000000000000000000112 /* BrainCalibration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainCalibration.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -64,6 +66,7 @@
 				110000000000000000000109 /* DepthSampler.swift */,
 				110000000000000000000110 /* PointUnprojector.swift */,
 				110000000000000000000111 /* TouchDetector.swift */,
+				110000000000000000000112 /* BrainCalibration.swift */,
 			);
 			path = Sources/BrainTouchARSensor;
 			sourceTree = "<group>";
@@ -150,6 +153,7 @@
 				110000000000000000000007 /* DepthSampler.swift in Sources */,
 				110000000000000000000008 /* PointUnprojector.swift in Sources */,
 				110000000000000000000009 /* TouchDetector.swift in Sources */,
+				110000000000000000000010 /* BrainCalibration.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

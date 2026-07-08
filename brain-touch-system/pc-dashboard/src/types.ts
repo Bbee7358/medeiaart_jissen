@@ -19,6 +19,18 @@ export type PixelSize = {
   h: number;
 };
 
+export type BrainCalibration = {
+  centerX: number;
+  centerY: number;
+  centerZ: number;
+  widthMeters: number;
+  depthMeters: number;
+  heightMeters: number;
+  touchThresholdCm: number;
+  dwellTimeSeconds: number;
+  confidenceThreshold: number;
+};
+
 export type TouchEventMessage = {
   version: "0.1.0";
   source: string;
@@ -58,6 +70,7 @@ export type TouchEventMessage = {
     touchCandidate?: boolean;
     strongTouchCandidate?: boolean;
     fingerSpeedMetersPerSec?: number | null;
+    calibration?: BrainCalibration;
     fps: number;
   };
 };

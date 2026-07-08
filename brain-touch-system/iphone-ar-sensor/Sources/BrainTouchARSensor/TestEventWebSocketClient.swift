@@ -333,6 +333,7 @@ private struct TouchTestDebug: Encodable {
     let touchCandidate: Bool
     let strongTouchCandidate: Bool
     let fingerSpeedMetersPerSec: Double?
+    let calibration: BrainCalibration
     let fps = 30.0
 
     init(handPose: HandPoseSnapshot) {
@@ -354,6 +355,7 @@ private struct TouchTestDebug: Encodable {
         self.touchCandidate = handPose.touch.isCandidate
         self.strongTouchCandidate = handPose.touch.isStrongCandidate
         self.fingerSpeedMetersPerSec = handPose.touch.speedMetersPerSec
+        self.calibration = handPose.calibration
     }
 
     enum CodingKeys: String, CodingKey {
@@ -375,6 +377,7 @@ private struct TouchTestDebug: Encodable {
         case touchCandidate
         case strongTouchCandidate
         case fingerSpeedMetersPerSec
+        case calibration
         case fps
     }
 
@@ -398,6 +401,7 @@ private struct TouchTestDebug: Encodable {
         try container.encode(touchCandidate, forKey: .touchCandidate)
         try container.encode(strongTouchCandidate, forKey: .strongTouchCandidate)
         try container.encodeOptionalAsNull(fingerSpeedMetersPerSec, forKey: .fingerSpeedMetersPerSec)
+        try container.encode(calibration, forKey: .calibration)
         try container.encode(fps, forKey: .fps)
     }
 }

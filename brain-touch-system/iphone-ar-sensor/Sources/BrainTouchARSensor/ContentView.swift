@@ -35,11 +35,88 @@ struct ContentView: View {
                     DebugRow(label: "touch duration", value: sessionModel.touchDurationText)
                     DebugRow(label: "ellipsoid center", value: sessionModel.brainModelCenterText)
 
-                    Button("Set Ellipsoid Center Here") {
-                        sessionModel.setBrainModelCenterToCurrentFinger()
+                    Divider()
+                        .background(.white.opacity(0.28))
+
+                    Text("Calibration")
+                        .font(.subheadline.weight(.semibold))
+
+                    HStack(spacing: 10) {
+                        Button("Set Center Here") {
+                            sessionModel.setBrainModelCenterToCurrentFinger()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(sessionModel.handPose.indexTip3D == nil)
+
+                        Button("Reset calibration") {
+                            sessionModel.resetCalibration()
+                        }
+                        .buttonStyle(.bordered)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(sessionModel.handPose.indexTip3D == nil)
+
+                    CalibrationStepper(
+                        label: "brain center x",
+                        value: calibrationBinding(\.centerX),
+                        range: -2.0...2.0,
+                        step: 0.01,
+                        unit: "m"
+                    )
+                    CalibrationStepper(
+                        label: "brain center y",
+                        value: calibrationBinding(\.centerY),
+                        range: -2.0...2.0,
+                        step: 0.01,
+                        unit: "m"
+                    )
+                    CalibrationStepper(
+                        label: "brain center z",
+                        value: calibrationBinding(\.centerZ),
+                        range: -3.0...0.5,
+                        step: 0.01,
+                        unit: "m"
+                    )
+                    CalibrationStepper(
+                        label: "brain width",
+                        value: calibrationBinding(\.widthMeters),
+                        range: 0.05...1.0,
+                        step: 0.01,
+                        unit: "m"
+                    )
+                    CalibrationStepper(
+                        label: "brain depth",
+                        value: calibrationBinding(\.depthMeters),
+                        range: 0.05...1.0,
+                        step: 0.01,
+                        unit: "m"
+                    )
+                    CalibrationStepper(
+                        label: "brain height",
+                        value: calibrationBinding(\.heightMeters),
+                        range: 0.05...1.0,
+                        step: 0.01,
+                        unit: "m"
+                    )
+                    CalibrationStepper(
+                        label: "touch threshold",
+                        value: calibrationBinding(\.touchThresholdCm),
+                        range: 0.5...20.0,
+                        step: 0.5,
+                        unit: "cm"
+                    )
+                    CalibrationStepper(
+                        label: "dwell time",
+                        value: calibrationBinding(\.dwellTimeSeconds),
+                        range: 0.0...3.0,
+                        step: 0.1,
+                        unit: "s"
+                    )
+                    CalibrationStepper(
+                        label: "confidence threshold",
+                        value: calibrationBinding(\.confidenceThreshold),
+                        range: 0.0...1.0,
+                        step: 0.05,
+                        unit: ""
+                    )
 
                     if !sessionModel.isDepthAvailable {
                         Text("LiDAR depth is not available")
@@ -119,6 +196,19 @@ struct ContentView: View {
             webSocketClient.updateHandPose(handPose)
         }
     }
+
+    private func calibrationBinding(_ keyPath: WritableKeyPath<BrainCalibration, Double>) -> Binding<Double> {
+        Binding(
+            get: {
+                sessionModel.calibration[keyPath: keyPath]
+            },
+            set: { newValue in
+                sessionModel.updateCalibration { calibration in
+                    calibration[keyPath: keyPath] = newValue
+                }
+            }
+        )
+    }
 }
 
 private struct DebugRow: View {
@@ -135,6 +225,36 @@ private struct DebugRow: View {
                 .multilineTextAlignment(.trailing)
         }
         .font(.caption.monospacedDigit())
+    }
+}
+
+private struct CalibrationStepper: View {
+    let label: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let step: Double
+    let unit: String
+
+    var body: some View {
+        Stepper(value: $value, in: range, step: step) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(label)
+                    .foregroundStyle(.white.opacity(0.72))
+                Spacer(minLength: 16)
+                Text(formattedValue)
+                    .fontWeight(.semibold)
+                    .monospacedDigit()
+            }
+        }
+        .font(.caption)
+    }
+
+    private var formattedValue: String {
+        if unit.isEmpty {
+            return String(format: "%.2f", value)
+        }
+
+        return String(format: "%.2f%@", value, unit)
     }
 }
 
