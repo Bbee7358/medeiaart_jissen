@@ -48,8 +48,13 @@ export type DailyStats = {
 
 export type ServerDiagnostics = {
   clientCount: number;
+  localAddresses: string[];
+  healthUrls: string[];
+  websocketUrls: string[];
   lastEventAt: number | null;
   lastEventRemote: string | null;
+  lastHttpRequestAt: number | null;
+  lastHttpRequestRemote: string | null;
   lastWarning: string | null;
 };
 

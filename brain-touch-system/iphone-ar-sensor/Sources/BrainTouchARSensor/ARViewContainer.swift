@@ -8,7 +8,9 @@ struct ARViewContainer: UIViewRepresentable {
     func makeUIView(context: Context) -> ARView {
         let arView = ARView(frame: .zero)
         arView.session.delegate = sessionModel
-        sessionModel.startSession(on: arView.session)
+        Task { @MainActor in
+            sessionModel.startSession(on: arView.session)
+        }
         return arView
     }
 
@@ -19,4 +21,3 @@ struct ARViewContainer: UIViewRepresentable {
         uiView.session.pause()
     }
 }
-

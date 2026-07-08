@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import http from "node:http";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
@@ -9,10 +11,19 @@ const dashboardRoot = path.resolve(__dirname, "..");
 const projectRoot = path.resolve(dashboardRoot, "..");
 const logsDir = path.join(dashboardRoot, "logs");
 const schemaPath = path.join(projectRoot, "shared/touch-event.schema.json");
-const server = new WebSocketServer({ host: "0.0.0.0", port: PORT });
+const httpServer = http.createServer(handleHttpRequest);
+const server = new WebSocketServer({ noServer: true });
 const clients = new Set<WebSocket>();
 const schema = JSON.parse(fs.readFileSync(schemaPath, "utf8")) as { required?: string[] };
 const requiredFields = schema.required ?? [];
+
+process.on("uncaughtException", (error) => {
+  console.error("[process] uncaught exception", error);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[process] unhandled rejection", reason);
+});
 
 type TouchEventMessage = {
   timestamp: number;
@@ -29,8 +40,13 @@ type DailyStats = {
 
 type ServerDiagnostics = {
   clientCount: number;
+  localAddresses: string[];
+  healthUrls: string[];
+  websocketUrls: string[];
   lastEventAt: number | null;
   lastEventRemote: string | null;
+  lastHttpRequestAt: number | null;
+  lastHttpRequestRemote: string | null;
   lastWarning: string | null;
 };
 
@@ -42,8 +58,13 @@ let stats: DailyStats = {
 
 let diagnostics: ServerDiagnostics = {
   clientCount: 0,
+  localAddresses: getLocalIPv4Addresses(),
+  healthUrls: getLocalIPv4Addresses().map((address) => `http://${address}:${PORT}/health`),
+  websocketUrls: getLocalIPv4Addresses().map((address) => `ws://${address}:${PORT}`),
   lastEventAt: null,
   lastEventRemote: null,
+  lastHttpRequestAt: null,
+  lastHttpRequestRemote: null,
   lastWarning: null
 };
 
@@ -59,6 +80,20 @@ function formatLocalDate(date: Date) {
 
 function getLogPath(date = stats.date) {
   return path.join(logsDir, `touch-events-${date}.jsonl`);
+}
+
+function getLocalIPv4Addresses() {
+  return Object.values(os.networkInterfaces())
+    .flatMap((networkInterface) => networkInterface ?? [])
+    .filter((address) => address.family === "IPv4" && !address.internal)
+    .map((address) => address.address);
+}
+
+function refreshNetworkDiagnostics() {
+  const localAddresses = getLocalIPv4Addresses();
+  diagnostics.localAddresses = localAddresses;
+  diagnostics.healthUrls = localAddresses.map((address) => `http://${address}:${PORT}/health`);
+  diagnostics.websocketUrls = localAddresses.map((address) => `ws://${address}:${PORT}`);
 }
 
 function resetStatsIfDateChanged() {
@@ -121,6 +156,7 @@ function broadcastStats() {
 }
 
 function broadcastDiagnostics() {
+  refreshNetworkDiagnostics();
   diagnostics.clientCount = clients.size;
   const message = JSON.stringify({
     type: "serverDiagnostics",
@@ -159,6 +195,61 @@ function appendEvent(event: TouchEventMessage) {
   }
 }
 
+function buildHealthPayload() {
+  refreshNetworkDiagnostics();
+
+  return {
+    ok: true,
+    service: "brain-touch-websocket",
+    port: PORT,
+    now: new Date().toISOString(),
+    stats,
+    diagnostics: {
+      ...diagnostics,
+      clientCount: clients.size
+    }
+  };
+}
+
+function handleHttpRequest(request: http.IncomingMessage, response: http.ServerResponse) {
+  const remote = `${request.socket.remoteAddress ?? "unknown"}:${request.socket.remotePort ?? "unknown"}`;
+  diagnostics.lastHttpRequestAt = Date.now();
+  diagnostics.lastHttpRequestRemote = remote;
+  console.log(`[http] ${remote} ${request.method ?? "UNKNOWN"} ${request.url ?? "/"}`);
+
+  if (request.url === "/health" || request.url === "/health/") {
+    const body = JSON.stringify(buildHealthPayload(), null, 2);
+    response.writeHead(200, {
+      "Access-Control-Allow-Origin": "*",
+      "Cache-Control": "no-store",
+      "Content-Type": "application/json; charset=utf-8"
+    });
+    response.end(body);
+    broadcastDiagnostics();
+    return;
+  }
+
+  const healthUrls = buildHealthPayload().diagnostics.healthUrls;
+  const websocketUrls = buildHealthPayload().diagnostics.websocketUrls;
+  const body = [
+    "Brain Touch WebSocket server is running.",
+    "",
+    "Health check URLs:",
+    ...healthUrls.map((url) => `- ${url}`),
+    "",
+    "iPhone WebSocket URLs:",
+    ...websocketUrls.map((url) => `- ${url}`)
+  ].join("\n");
+
+  response.writeHead(200, {
+    "Access-Control-Allow-Origin": "*",
+    "Cache-Control": "no-store",
+    "Content-Type": "text/plain; charset=utf-8"
+  });
+  response.end(body);
+  broadcastDiagnostics();
+}
+
 server.on("connection", (socket, request) => {
   clients.add(socket);
   const remote = `${request.socket.remoteAddress ?? "unknown"}:${request.socket.remotePort ?? "unknown"}`;
@@ -169,6 +260,7 @@ server.on("connection", (socket, request) => {
 
   socket.on("message", (data) => {
     const message = data.toString();
+    console.log(`[ws] message from ${remote}: ${message.slice(0, 200)}`);
     let event: TouchEventMessage;
 
     try {
@@ -193,9 +285,9 @@ server.on("connection", (socket, request) => {
     broadcastDiagnostics();
   });
 
-  socket.on("close", () => {
+  socket.on("close", (code, reason) => {
     clients.delete(socket);
-    console.log(`[ws] disconnected ${remote}. clients=${clients.size}`);
+    console.log(`[ws] disconnected ${remote}. code=${code} reason=${reason.toString()} clients=${clients.size}`);
     broadcastDiagnostics();
   });
 
@@ -204,11 +296,26 @@ server.on("connection", (socket, request) => {
   });
 });
 
-server.on("listening", () => {
-  console.log(`[ws] brain touch server listening on ws://0.0.0.0:${PORT}`);
+httpServer.on("upgrade", (request, socket, head) => {
+  const remote = `${request.socket.remoteAddress ?? "unknown"}:${request.socket.remotePort ?? "unknown"}`;
+  console.log(`[ws] upgrade request from ${remote} ${request.url ?? "/"}`);
+
+  server.handleUpgrade(request, socket, head, (webSocket) => {
+    server.emit("connection", webSocket, request);
+  });
 });
 
-server.on("error", (error) => {
+httpServer.on("listening", () => {
+  refreshNetworkDiagnostics();
+  console.log(`[ws] brain touch server listening on ws://0.0.0.0:${PORT}`);
+  for (const url of diagnostics.healthUrls) {
+    console.log(`[http] health check available at ${url}`);
+  }
+});
+
+httpServer.on("error", (error) => {
   console.error("[ws] server error", error);
   process.exitCode = 1;
 });
+
+httpServer.listen(PORT, "0.0.0.0");

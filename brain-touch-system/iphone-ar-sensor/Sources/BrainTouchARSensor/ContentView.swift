@@ -58,9 +58,27 @@ struct ContentView: View {
                         .disabled(!webSocketClient.isConnected)
                     }
 
+                    Button("Check /health") {
+                        webSocketClient.checkHealth()
+                    }
+                    .buttonStyle(.bordered)
+
                     DebugRow(label: "WebSocket URL", value: webSocketClient.urlString)
+                    DebugRow(label: "health status", value: webSocketClient.healthCheckStatus)
                     DebugRow(label: "connection status", value: webSocketClient.connectionStatus)
                     DebugRow(label: "last sent timestamp", value: webSocketClient.lastSentTimestampText)
+
+                    Text("last health response")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.72))
+
+                    ScrollView(.horizontal) {
+                        Text(webSocketClient.lastHealthResponse.isEmpty ? "-" : webSocketClient.lastHealthResponse)
+                            .font(.caption2.monospaced())
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 120)
 
                     Text("last sent JSON")
                         .font(.caption)

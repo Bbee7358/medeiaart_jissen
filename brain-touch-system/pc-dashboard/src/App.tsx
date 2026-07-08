@@ -169,6 +169,26 @@ function App() {
             <dd>{serverDiagnostics?.lastEventRemote ?? "-"}</dd>
           </div>
           <div>
+            <dt>last HTTP check</dt>
+            <dd>{serverDiagnostics?.lastHttpRequestAt ? formatTime(serverDiagnostics.lastHttpRequestAt) : "-"}</dd>
+          </div>
+          <div>
+            <dt>last HTTP sender</dt>
+            <dd>{serverDiagnostics?.lastHttpRequestRemote ?? "-"}</dd>
+          </div>
+          <div>
+            <dt>Mac IP candidates</dt>
+            <dd>{serverDiagnostics?.localAddresses?.join(", ") || "-"}</dd>
+          </div>
+          <div>
+            <dt>Safari health check</dt>
+            <dd>{serverDiagnostics?.healthUrls?.join(" / ") || "-"}</dd>
+          </div>
+          <div>
+            <dt>iPhone WebSocket URL</dt>
+            <dd>{serverDiagnostics?.websocketUrls?.join(" / ") || "-"}</dd>
+          </div>
+          <div>
             <dt>server warning</dt>
             <dd>{serverDiagnostics?.lastWarning ?? "-"}</dd>
           </div>

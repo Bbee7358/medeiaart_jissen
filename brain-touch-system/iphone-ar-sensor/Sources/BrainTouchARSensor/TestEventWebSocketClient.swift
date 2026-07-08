@@ -2,10 +2,12 @@ import Foundation
 
 @MainActor
 final class TestEventWebSocketClient: NSObject, ObservableObject {
-    @Published var urlString = "ws://192.168.0.10:8787"
+    @Published var urlString = "ws://WatanabenoMacBook-Air.local:8787"
     @Published var connectionStatus = "disconnected"
     @Published var lastSentTimestampText = "-"
     @Published var lastSentJSON = ""
+    @Published var healthCheckStatus = "not checked"
+    @Published var lastHealthResponse = ""
     @Published var isConnected = false
 
     private var urlSession: URLSession?
@@ -39,8 +41,6 @@ final class TestEventWebSocketClient: NSObject, ObservableObject {
                 self.urlSession = nil
             }
         }
-
-        listenForCloseOrError()
     }
 
     func disconnect() {
@@ -60,6 +60,34 @@ final class TestEventWebSocketClient: NSObject, ObservableObject {
     func updateHandPose(_ handPose: HandPoseSnapshot) {
         self.handPose = handPose
     }
+
+    func checkHealth() {
+        guard let healthURL = makeHealthURL() else {
+            healthCheckStatus = "invalid health URL"
+            lastHealthResponse = ""
+            return
+        }
+
+        healthCheckStatus = "checking \(healthURL.absoluteString)"
+        lastHealthResponse = ""
+
+        var request = URLRequest(url: healthURL)
+        request.timeoutInterval = 5
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            Task { @MainActor in
+                if let error {
+                    self?.healthCheckStatus = "health error: \(error.localizedDescription)"
+                    self?.lastHealthResponse = "\(error)"
+                    return
+                }
+
+                let statusCode = (response as? HTTPURLResponse)?.statusCode
+                self?.healthCheckStatus = "health ok: HTTP \(statusCode.map(String.init) ?? "unknown")"
+                self?.lastHealthResponse = data.flatMap { String(data: $0, encoding: .utf8) } ?? "(empty response)"
+            }
+        }.resume()
+    }
 }
 
 extension TestEventWebSocketClient: URLSessionWebSocketDelegate {
@@ -74,6 +102,7 @@ extension TestEventWebSocketClient: URLSessionWebSocketDelegate {
             self.isConnected = true
             self.connectionStatus = "connected"
             self.startSending()
+            self.listenForCloseOrError()
         }
     }
 
@@ -95,6 +124,15 @@ extension TestEventWebSocketClient: URLSessionWebSocketDelegate {
 }
 
 private extension TestEventWebSocketClient {
+    func makeHealthURL() -> URL? {
+        guard var components = URLComponents(string: urlString) else { return nil }
+        components.scheme = components.scheme == "wss" ? "https" : "http"
+        components.path = "/health"
+        components.query = nil
+        components.fragment = nil
+        return components.url
+    }
+
     func startSending() {
         sendTimer?.invalidate()
         sendTestEvent()
@@ -140,10 +178,13 @@ private extension TestEventWebSocketClient {
     }
 
     func listenForCloseOrError() {
-        webSocketTask?.receive { [weak self] result in
+        guard let webSocketTask else { return }
+
+        webSocketTask.receive { [weak self] result in
             Task { @MainActor in
                 switch result {
                 case .success:
+                    guard self?.isConnected == true else { return }
                     self?.listenForCloseOrError()
                 case .failure(let error):
                     self?.connectTimeoutTimer?.invalidate()
