@@ -9,6 +9,9 @@ struct ContentView: View {
             ARViewContainer(sessionModel: sessionModel)
                 .ignoresSafeArea()
 
+            FingerTipOverlay(point: sessionModel.handPose.fingerTips.indexTip)
+                .ignoresSafeArea()
+
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Brain Touch AR Sensor")
@@ -119,6 +122,30 @@ private struct DebugRow: View {
                 .multilineTextAlignment(.trailing)
         }
         .font(.caption.monospacedDigit())
+    }
+}
+
+private struct FingerTipOverlay: View {
+    let point: HandJoint2D?
+
+    var body: some View {
+        GeometryReader { geometry in
+            if let point {
+                Circle()
+                    .fill(.yellow)
+                    .overlay {
+                        Circle()
+                            .stroke(.black.opacity(0.78), lineWidth: 3)
+                    }
+                    .frame(width: 28, height: 28)
+                    .shadow(color: .yellow.opacity(0.45), radius: 14)
+                    .position(
+                        x: min(max(point.x, 0), 1) * geometry.size.width,
+                        y: min(max(point.y, 0), 1) * geometry.size.height
+                    )
+            }
+        }
+        .allowsHitTesting(false)
     }
 }
 

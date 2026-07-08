@@ -4,6 +4,10 @@ import type { DailyStats, DashboardStatus, Point2D, Point3D, ServerDiagnostics, 
 const WS_URL = "ws://127.0.0.1:8787";
 const MAX_LOGS = 10;
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
 function formatTime(timestamp?: number): string {
   if (!timestamp) return "-";
   return new Intl.DateTimeFormat("ja-JP", {
@@ -27,6 +31,21 @@ function formatPoint2D(point: Point2D | null): string {
 function formatPoint3D(point: Point3D | null): string {
   if (!point) return "-";
   return `x ${point.x.toFixed(3)}, y ${point.y.toFixed(3)}, z ${point.z.toFixed(3)}`;
+}
+
+function normalizedPercent(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "50%";
+  return `${clamp(value, 0, 1) * 100}%`;
+}
+
+function worldAxisPercent(value: number | null | undefined, rangeMeters = 1.5): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "50%";
+  return `${((clamp(value, -rangeMeters, rangeMeters) + rangeMeters) / (rangeMeters * 2)) * 100}%`;
+}
+
+function depthPercent(point: Point3D | null | undefined, maxDepthMeters = 2.5): string {
+  if (!point || Number.isNaN(point.z)) return "0%";
+  return `${(clamp(Math.abs(point.z), 0, maxDepthMeters) / maxDepthMeters) * 100}%`;
 }
 
 function statusLabel(status: DashboardStatus): string {
@@ -150,6 +169,49 @@ function App() {
         <article className="panel counter-panel confirmed">
           <span>今日の接触確定件数</span>
           <strong>{dailyStats?.confirmedTouchCount ?? 0}</strong>
+        </article>
+      </section>
+
+      <section className="visual-grid">
+        <article className="panel visual-panel">
+          <h2>Index Tip 2D</h2>
+          <div className="camera-plane">
+            <span className="plane-label top">top</span>
+            <span className="plane-label right">right</span>
+            <span
+              className={`finger-dot ${lastEvent?.debug.indexTip2D ? "visible" : ""}`}
+              style={{
+                left: normalizedPercent(lastEvent?.debug.indexTip2D?.x),
+                top: normalizedPercent(lastEvent?.debug.indexTip2D?.y)
+              }}
+            />
+          </div>
+        </article>
+
+        <article className="panel visual-panel">
+          <h2>Index Tip 3D</h2>
+          <div className="world-view">
+            <div className="world-plane">
+              <span className="axis x-axis" />
+              <span className="axis z-axis" />
+              <span className="plane-label top">front</span>
+              <span className="plane-label right">right</span>
+              <span
+                className={`finger-dot world ${lastEvent?.debug.indexTip3D ? "visible" : ""}`}
+                style={{
+                  left: worldAxisPercent(lastEvent?.debug.indexTip3D?.x),
+                  top: worldAxisPercent(lastEvent?.debug.indexTip3D ? -lastEvent.debug.indexTip3D.z : undefined)
+                }}
+              />
+            </div>
+            <div className="depth-meter">
+              <span style={{ width: depthPercent(lastEvent?.debug.indexTip3D) }} />
+            </div>
+            <div className="visual-meta">
+              <span>{lastEvent?.debug.indexTip3DSpace ?? "-"}</span>
+              <strong>{formatPoint3D(lastEvent?.debug.indexTip3D ?? null)}</strong>
+            </div>
+          </div>
         </article>
       </section>
 
