@@ -66,6 +66,19 @@ logs/touch-events-2026-07-08.jsonl
 
 接触確定は `isTouching: true` かつ `confidence >= 0.75` のイベントです。
 
+## Threshold Controls
+
+ダッシュボードには、展示中に接触判定の目安を確認するためのしきい値調整パネルがあります。
+
+設定値はブラウザの `localStorage` に保存されます。現段階ではPC側での表示・確認用で、iPhone側へはまだ送信しません。
+
+- `touch threshold cm`: 指先と仮脳模型表面の距離が何cm以内なら接触候補と見るか
+- `dwell time seconds`: 同じ条件を何秒以上満たしたら接触確定と見るか
+- `confidence threshold`: 信頼度がどれ以上なら接触確定条件として扱うか
+- `smoothing frames`: 将来の平滑化設定用の管理値。現段階ではPC側保存のみ
+
+パネルでは、現在受信している `distanceCm`, `durationSec`, `confidence` がしきい値を満たしているかを個別に表示します。すべて満たすと「接触確定条件を満たしている」と表示されます。
+
 ## Build
 
 ```sh

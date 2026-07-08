@@ -123,6 +123,19 @@ h2 {
   margin-bottom: 14px;
 }
 
+.panel-heading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.panel-heading h2 {
+  margin-bottom: 0;
+}
+
 .counter-panel {
   display: grid;
   gap: 8px;
@@ -140,6 +153,110 @@ h2 {
 
 .counter-panel.confirmed {
   border-color: #d8973c;
+}
+
+.threshold-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.condition-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid #3a444d;
+  border-radius: 999px;
+  color: #d8dee5;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.condition-pill.ok {
+  border-color: #4fc17b;
+  background: rgba(79, 193, 123, 0.12);
+  color: #a9e8bf;
+}
+
+.condition-pill.ng {
+  border-color: #e05d5d;
+  background: rgba(224, 93, 93, 0.1);
+  color: #f0b5b5;
+}
+
+.threshold-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+  gap: 18px;
+}
+
+.threshold-controls,
+.threshold-checks {
+  display: grid;
+  gap: 12px;
+}
+
+.threshold-control {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(90px, auto);
+  gap: 8px 14px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid #2a3035;
+}
+
+.threshold-control span {
+  color: #aeb8c2;
+  font-size: 13px;
+}
+
+.threshold-control strong {
+  justify-self: end;
+  font-size: 15px;
+}
+
+.threshold-control input {
+  grid-column: 1 / -1;
+  width: 100%;
+  accent-color: #f2c879;
+}
+
+.threshold-check {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) minmax(90px, auto);
+  gap: 6px 10px;
+  align-items: baseline;
+  padding: 12px;
+  border: 1px solid #2a3035;
+  border-radius: 8px;
+  background: #101418;
+}
+
+.threshold-check span {
+  color: #aeb8c2;
+  font-size: 13px;
+}
+
+.threshold-check strong {
+  justify-self: end;
+  font-size: 20px;
+}
+
+.threshold-check em {
+  grid-column: 1 / -1;
+  color: #9aa5b1;
+  font-size: 12px;
+  font-style: normal;
+}
+
+.threshold-check.ok {
+  border-color: #4fc17b;
+  background: rgba(79, 193, 123, 0.08);
+}
+
+.threshold-check.ng {
+  border-color: #844343;
+  background: rgba(224, 93, 93, 0.08);
 }
 
 .visual-panel {
@@ -418,7 +535,8 @@ pre {
 @media (max-width: 900px) {
   .grid,
   .visual-grid,
-  .summary-grid {
+  .summary-grid,
+  .threshold-layout {
     grid-template-columns: 1fr;
   }
 

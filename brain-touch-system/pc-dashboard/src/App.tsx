@@ -3,6 +3,21 @@ import type { DailyStats, DashboardStatus, PixelPoint, PixelSize, Point2D, Point
 
 const WS_URL = "ws://127.0.0.1:8787";
 const MAX_LOGS = 10;
+const THRESHOLDS_STORAGE_KEY = "brain-touch-dashboard.thresholds.v1";
+
+type ThresholdSettings = {
+  touchThresholdCm: number;
+  dwellTimeSeconds: number;
+  confidenceThreshold: number;
+  smoothingFrames: number;
+};
+
+const DEFAULT_THRESHOLDS: ThresholdSettings = {
+  touchThresholdCm: 5,
+  dwellTimeSeconds: 0.5,
+  confidenceThreshold: 0.75,
+  smoothingFrames: 5
+};
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -21,6 +36,11 @@ function formatTime(timestamp?: number): string {
 function formatNumber(value: number | null | undefined, digits = 2): string {
   if (value === null || value === undefined || Number.isNaN(value)) return "-";
   return value.toFixed(digits);
+}
+
+function formatPercent(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "-";
+  return `${Math.round(value * 100)}%`;
 }
 
 function formatPoint2D(point: Point2D | null): string {
@@ -66,6 +86,23 @@ function pixelPercent(point: PixelPoint | null | undefined, size: PixelSize | nu
   return `${(clamp(value, 0, max) / max) * 100}%`;
 }
 
+function loadThresholdSettings(): ThresholdSettings {
+  try {
+    const raw = window.localStorage.getItem(THRESHOLDS_STORAGE_KEY);
+    if (!raw) return DEFAULT_THRESHOLDS;
+
+    const parsed = JSON.parse(raw) as Partial<ThresholdSettings>;
+    return {
+      touchThresholdCm: clamp(Number(parsed.touchThresholdCm ?? DEFAULT_THRESHOLDS.touchThresholdCm), 0.5, 30),
+      dwellTimeSeconds: clamp(Number(parsed.dwellTimeSeconds ?? DEFAULT_THRESHOLDS.dwellTimeSeconds), 0, 5),
+      confidenceThreshold: clamp(Number(parsed.confidenceThreshold ?? DEFAULT_THRESHOLDS.confidenceThreshold), 0, 1),
+      smoothingFrames: Math.round(clamp(Number(parsed.smoothingFrames ?? DEFAULT_THRESHOLDS.smoothingFrames), 1, 30))
+    };
+  } catch {
+    return DEFAULT_THRESHOLDS;
+  }
+}
+
 function statusLabel(status: DashboardStatus): string {
   switch (status) {
     case "connecting":
@@ -94,6 +131,11 @@ function App() {
   const [lastReceivedAt, setLastReceivedAt] = useState<number | null>(null);
   const [dailyStats, setDailyStats] = useState<DailyStats | null>(null);
   const [serverDiagnostics, setServerDiagnostics] = useState<ServerDiagnostics | null>(null);
+  const [thresholds, setThresholds] = useState<ThresholdSettings>(() => loadThresholdSettings());
+
+  useEffect(() => {
+    window.localStorage.setItem(THRESHOLDS_STORAGE_KEY, JSON.stringify(thresholds));
+  }, [thresholds]);
 
   useEffect(() => {
     let reconnectTimer: number | undefined;
@@ -164,6 +206,30 @@ function App() {
     return `${region}の${surface}を触っています`;
   }, [lastEvent]);
 
+  const thresholdChecks = useMemo(() => {
+    const distanceOk = lastEvent?.distanceCm !== null && lastEvent?.distanceCm !== undefined
+      ? lastEvent.distanceCm <= thresholds.touchThresholdCm
+      : false;
+    const durationOk = lastEvent?.durationSec !== null && lastEvent?.durationSec !== undefined
+      ? lastEvent.durationSec >= thresholds.dwellTimeSeconds
+      : false;
+    const confidenceOk = lastEvent ? lastEvent.confidence >= thresholds.confidenceThreshold : false;
+
+    return {
+      distanceOk,
+      durationOk,
+      confidenceOk,
+      allOk: distanceOk && durationOk && confidenceOk
+    };
+  }, [lastEvent, thresholds]);
+
+  const updateThreshold = (key: keyof ThresholdSettings, value: number) => {
+    setThresholds((current) => ({
+      ...current,
+      [key]: key === "smoothingFrames" ? Math.round(value) : value
+    }));
+  };
+
   return (
     <main className="dashboard">
       <section className={`hero ${lastEvent?.isTouching ? "is-touching" : ""}`}>
@@ -188,6 +254,77 @@ function App() {
           <span>今日の接触確定件数</span>
           <strong>{dailyStats?.confirmedTouchCount ?? 0}</strong>
         </article>
+      </section>
+
+      <section className="panel threshold-panel">
+        <div className="panel-heading">
+          <h2>Threshold Controls</h2>
+          <span className={`condition-pill ${thresholdChecks.allOk ? "ok" : "ng"}`}>
+            {thresholdChecks.allOk ? "接触確定条件を満たしている" : "接触確定条件を満たしていない"}
+          </span>
+        </div>
+
+        <div className="threshold-layout">
+          <div className="threshold-controls">
+            <ThresholdControl
+              label="touch threshold cm"
+              value={thresholds.touchThresholdCm}
+              min={0.5}
+              max={30}
+              step={0.5}
+              unit="cm"
+              onChange={(value) => updateThreshold("touchThresholdCm", value)}
+            />
+            <ThresholdControl
+              label="dwell time seconds"
+              value={thresholds.dwellTimeSeconds}
+              min={0}
+              max={5}
+              step={0.1}
+              unit="s"
+              onChange={(value) => updateThreshold("dwellTimeSeconds", value)}
+            />
+            <ThresholdControl
+              label="confidence threshold"
+              value={thresholds.confidenceThreshold}
+              min={0}
+              max={1}
+              step={0.05}
+              unit=""
+              onChange={(value) => updateThreshold("confidenceThreshold", value)}
+            />
+            <ThresholdControl
+              label="smoothing frames"
+              value={thresholds.smoothingFrames}
+              min={1}
+              max={30}
+              step={1}
+              unit="frames"
+              onChange={(value) => updateThreshold("smoothingFrames", value)}
+            />
+          </div>
+
+          <div className="threshold-checks">
+            <ThresholdCheck
+              label="distanceCm"
+              current={`${formatNumber(lastEvent?.distanceCm)} cm`}
+              target={`<= ${thresholds.touchThresholdCm.toFixed(1)} cm`}
+              ok={thresholdChecks.distanceOk}
+            />
+            <ThresholdCheck
+              label="durationSec"
+              current={`${formatNumber(lastEvent?.durationSec)} s`}
+              target={`>= ${thresholds.dwellTimeSeconds.toFixed(1)} s`}
+              ok={thresholdChecks.durationOk}
+            />
+            <ThresholdCheck
+              label="confidence"
+              current={formatPercent(lastEvent?.confidence)}
+              target={`>= ${formatPercent(thresholds.confidenceThreshold)}`}
+              ok={thresholdChecks.confidenceOk}
+            />
+          </div>
+        </div>
       </section>
 
       <section className="visual-grid">
@@ -457,3 +594,51 @@ function App() {
 }
 
 export default App;
+
+type ThresholdControlProps = {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  unit: string;
+  onChange: (value: number) => void;
+};
+
+function ThresholdControl({ label, value, min, max, step, unit, onChange }: ThresholdControlProps) {
+  const displayValue = unit === ""
+    ? value.toFixed(2)
+    : `${value.toFixed(step >= 1 ? 0 : 1)} ${unit}`;
+
+  return (
+    <label className="threshold-control">
+      <span>{label}</span>
+      <strong>{displayValue}</strong>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(event) => onChange(Number(event.currentTarget.value))}
+      />
+    </label>
+  );
+}
+
+type ThresholdCheckProps = {
+  label: string;
+  current: string;
+  target: string;
+  ok: boolean;
+};
+
+function ThresholdCheck({ label, current, target, ok }: ThresholdCheckProps) {
+  return (
+    <div className={`threshold-check ${ok ? "ok" : "ng"}`}>
+      <span>{label}</span>
+      <strong>{current}</strong>
+      <em>{target}</em>
+    </div>
+  );
+}
