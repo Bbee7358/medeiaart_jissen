@@ -46,6 +46,71 @@ enum PointUnprojector {
         )
     }
 
+    static func unprojectDepthSample(
+        _ sample: DepthSampleResult?,
+        camera: ARCamera
+    ) -> HandJoint3D? {
+        guard let sample,
+              sample.depthMeters.isFinite,
+              sample.depthMeters > 0 else {
+            return nil
+        }
+
+        let depthMapSize = CGSize(width: sample.depthMapSize.w, height: sample.depthMapSize.h)
+        guard depthMapSize.width > 0, depthMapSize.height > 0 else {
+            return nil
+        }
+
+        let scaledIntrinsics = scaledIntrinsicsForDepth(
+            camera: camera,
+            depthMapSize: depthMapSize
+        )
+        let cameraSpacePoint = unprojectPoint(
+            pixelX: Float(sample.depthPixel.x),
+            pixelY: Float(sample.depthPixel.y),
+            depthMeters: Float(sample.depthMeters),
+            intrinsics: scaledIntrinsics
+        )
+
+        let worldPoint = camera.transform * SIMD4<Float>(
+            cameraSpacePoint.x,
+            cameraSpacePoint.y,
+            cameraSpacePoint.z,
+            1
+        )
+
+        return HandJoint3D(
+            x: Double(worldPoint.x),
+            y: Double(worldPoint.y),
+            z: Double(worldPoint.z)
+        )
+    }
+
+    static func scaledIntrinsicsForDepth(
+        camera: ARCamera,
+        depthMapSize: CGSize
+    ) -> simd_float3x3 {
+        var intrinsics = camera.intrinsics
+        let imageResolution = camera.imageResolution
+
+        guard imageResolution.width > 0,
+              imageResolution.height > 0,
+              depthMapSize.width > 0,
+              depthMapSize.height > 0 else {
+            return intrinsics
+        }
+
+        let scaleX = Float(depthMapSize.width / imageResolution.width)
+        let scaleY = Float(depthMapSize.height / imageResolution.height)
+
+        intrinsics.columns.0.x *= scaleX
+        intrinsics.columns.1.y *= scaleY
+        intrinsics.columns.2.x *= scaleX
+        intrinsics.columns.2.y *= scaleY
+
+        return intrinsics
+    }
+
     static func unprojectPoint(
         pixelX: Float,
         pixelY: Float,

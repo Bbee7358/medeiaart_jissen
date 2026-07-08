@@ -9,6 +9,16 @@ export type Point3D = {
   z: number;
 };
 
+export type PixelPoint = {
+  x: number;
+  y: number;
+};
+
+export type PixelSize = {
+  w: number;
+  h: number;
+};
+
 export type TouchEventMessage = {
   version: "0.1.0";
   source: string;
@@ -35,6 +45,16 @@ export type TouchEventMessage = {
       littleTip: Point2D | null;
     };
     depthMeters: number | null;
+    depthSample2D?: Point2D | null;
+    rawImageNorm?: Point2D | null;
+    depthPixel?: PixelPoint | null;
+    depthMapSize?: PixelSize | null;
+    capturedImageSize?: PixelSize | null;
+    visionOrientation?: string | null;
+    depthConfidenceRaw?: number | null;
+    depthSource?: string | null;
+    depthStrategy?: string | null;
+    depthSampleCount?: number | null;
     fps: number;
   };
 };

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { DailyStats, DashboardStatus, Point2D, Point3D, ServerDiagnostics, ServerMessage, TouchEventMessage } from "./types";
+import type { DailyStats, DashboardStatus, PixelPoint, PixelSize, Point2D, Point3D, ServerDiagnostics, ServerMessage, TouchEventMessage } from "./types";
 
 const WS_URL = "ws://127.0.0.1:8787";
 const MAX_LOGS = 10;
@@ -33,6 +33,16 @@ function formatPoint3D(point: Point3D | null): string {
   return `x ${point.x.toFixed(3)}, y ${point.y.toFixed(3)}, z ${point.z.toFixed(3)}`;
 }
 
+function formatPixel(point: PixelPoint | null | undefined): string {
+  if (!point) return "-";
+  return `${point.x}, ${point.y}`;
+}
+
+function formatSize(size: PixelSize | null | undefined): string {
+  if (!size) return "-";
+  return `${size.w} x ${size.h}`;
+}
+
 function normalizedPercent(value: number | null | undefined): string {
   if (value === null || value === undefined || Number.isNaN(value)) return "50%";
   return `${clamp(value, 0, 1) * 100}%`;
@@ -46,6 +56,14 @@ function worldAxisPercent(value: number | null | undefined, rangeMeters = 1.5): 
 function depthPercent(point: Point3D | null | undefined, maxDepthMeters = 2.5): string {
   if (!point || Number.isNaN(point.z)) return "0%";
   return `${(clamp(Math.abs(point.z), 0, maxDepthMeters) / maxDepthMeters) * 100}%`;
+}
+
+function pixelPercent(point: PixelPoint | null | undefined, size: PixelSize | null | undefined, axis: "x" | "y"): string {
+  if (!point || !size) return "50%";
+  const value = axis === "x" ? point.x : point.y;
+  const max = axis === "x" ? size.w - 1 : size.h - 1;
+  if (max <= 0) return "50%";
+  return `${(clamp(value, 0, max) / max) * 100}%`;
 }
 
 function statusLabel(status: DashboardStatus): string {
@@ -185,6 +203,17 @@ function App() {
                 top: normalizedPercent(lastEvent?.debug.indexTip2D?.y)
               }}
             />
+            <span
+              className={`finger-dot sample ${lastEvent?.debug.depthSample2D ? "visible" : ""}`}
+              style={{
+                left: normalizedPercent(lastEvent?.debug.depthSample2D?.x),
+                top: normalizedPercent(lastEvent?.debug.depthSample2D?.y)
+              }}
+            />
+          </div>
+          <div className="visual-meta">
+            <span>yellow: Vision tip</span>
+            <strong>orange: depth sample</strong>
           </div>
         </article>
 
@@ -211,6 +240,24 @@ function App() {
               <span>{lastEvent?.debug.indexTip3DSpace ?? "-"}</span>
               <strong>{formatPoint3D(lastEvent?.debug.indexTip3D ?? null)}</strong>
             </div>
+          </div>
+        </article>
+
+        <article className="panel visual-panel">
+          <h2>Depth Map Sample</h2>
+          <div className="depth-plane">
+            <span className="plane-label top">depth map</span>
+            <span
+              className={`sample-window ${lastEvent?.debug.depthPixel ? "visible" : ""}`}
+              style={{
+                left: pixelPercent(lastEvent?.debug.depthPixel, lastEvent?.debug.depthMapSize, "x"),
+                top: pixelPercent(lastEvent?.debug.depthPixel, lastEvent?.debug.depthMapSize, "y")
+              }}
+            />
+          </div>
+          <div className="visual-meta">
+            <span>px {formatPixel(lastEvent?.debug.depthPixel)}</span>
+            <strong>{formatSize(lastEvent?.debug.depthMapSize)}</strong>
           </div>
         </article>
       </section>
@@ -324,6 +371,38 @@ function App() {
             <div>
               <dt>indexTip3DSpace</dt>
               <dd>{lastEvent?.debug.indexTip3DSpace ?? "-"}</dd>
+            </div>
+            <div>
+              <dt>depthSample2D</dt>
+              <dd>{formatPoint2D(lastEvent?.debug.depthSample2D ?? null)}</dd>
+            </div>
+            <div>
+              <dt>rawImageNorm</dt>
+              <dd>{formatPoint2D(lastEvent?.debug.rawImageNorm ?? null)}</dd>
+            </div>
+            <div>
+              <dt>depthPixel</dt>
+              <dd>{formatPixel(lastEvent?.debug.depthPixel)}</dd>
+            </div>
+            <div>
+              <dt>depth map</dt>
+              <dd>{formatSize(lastEvent?.debug.depthMapSize)}</dd>
+            </div>
+            <div>
+              <dt>captured image</dt>
+              <dd>{formatSize(lastEvent?.debug.capturedImageSize)}</dd>
+            </div>
+            <div>
+              <dt>depth confidence</dt>
+              <dd>{lastEvent?.debug.depthConfidenceRaw ?? "-"}</dd>
+            </div>
+            <div>
+              <dt>depth source</dt>
+              <dd>{lastEvent?.debug.depthSource ?? "-"}</dd>
+            </div>
+            <div>
+              <dt>depth strategy</dt>
+              <dd>{lastEvent?.debug.depthStrategy ?? "-"}</dd>
             </div>
             <div>
               <dt>source</dt>

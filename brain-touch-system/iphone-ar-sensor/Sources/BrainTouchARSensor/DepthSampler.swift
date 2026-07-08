@@ -1,43 +1,69 @@
 import ARKit
+import CoreGraphics
 import CoreVideo
 import Foundation
 
+struct DepthSampleResult {
+    let depthMeters: Double
+    let sampleDisplayPoint: HandJoint2D
+    let rawImageNormalized: HandJoint2D
+    let depthPixel: PixelPoint
+    let depthMapSize: PixelSize
+    let capturedImageSize: PixelSize
+    let visionOrientation: String
+    let depthConfidenceRaw: Int?
+    let depthSource: String
+    let depthStrategy: String
+    let sampleCount: Int
+}
+
 enum DepthSampler {
-    static func sampleDepthMeters(
-        at normalizedPoint: HandJoint2D?,
-        from depthData: ARDepthData?,
-        kernelSize: Int = 5
-    ) -> Double? {
-        guard let normalizedPoint, let depthData else { return nil }
+    static func sampleIndexFingerDepth(
+        indexTipVisionPoint: CGPoint?,
+        indexDIPVisionPoint: CGPoint?,
+        depthData: ARDepthData?,
+        capturedImage: CVPixelBuffer,
+        depthSource: String,
+        kernelSize: Int = 7
+    ) -> DepthSampleResult? {
+        guard let indexTipVisionPoint, let depthData else { return nil }
+
+        let sampleVisionPoint: CGPoint
+        let strategy: String
+        if let indexDIPVisionPoint {
+            sampleVisionPoint = lerp(indexTipVisionPoint, indexDIPVisionPoint, t: 0.25)
+            strategy = "tip_to_dip_25percent_confidence_near_percentile_20"
+        } else {
+            sampleVisionPoint = indexTipVisionPoint
+            strategy = "tip_only_confidence_near_percentile_20"
+        }
 
         let depthMap = depthData.depthMap
-        let confidenceMap = depthData.confidenceMap
-
         guard CVPixelBufferGetPixelFormatType(depthMap) == kCVPixelFormatType_DepthFloat32 else {
             return nil
         }
 
-        let width = CVPixelBufferGetWidth(depthMap)
-        let height = CVPixelBufferGetHeight(depthMap)
-        guard width > 0, height > 0 else { return nil }
+        let depthWidth = CVPixelBufferGetWidth(depthMap)
+        let depthHeight = CVPixelBufferGetHeight(depthMap)
+        guard depthWidth > 0, depthHeight > 0 else { return nil }
 
-        // Vision gives normalized image coordinates. ARKit depth maps often have a lower
-        // resolution than the camera image, so normalized coordinates let us map across
-        // resolutions without assuming matching pixel dimensions.
-        //
-        // The current normalizedPoint is already converted for a top-left debug coordinate
-        // system in ARSessionModel.convertVisionPointToNormalizedDisplay(_:). We sample the
-        // depth map with the same top-left assumption. TODO: Verify rotation/mirroring on
-        // the physically mounted iPhone 12 Pro and adjust here if the depth overlay is offset.
-        let centerX = clamp(Int(round(normalizedPoint.x * Double(width - 1))), min: 0, max: width - 1)
-        let centerY = clamp(Int(round(normalizedPoint.y * Double(height - 1))), min: 0, max: height - 1)
+        let rawImageNormalized = visionPointToRawImageNormalizedPortraitBack(sampleVisionPoint)
+        guard rawImageNormalized.x >= 0,
+              rawImageNormalized.x <= 1,
+              rawImageNormalized.y >= 0,
+              rawImageNormalized.y <= 1 else {
+            return nil
+        }
+
+        let centerX = clamp(Int(round(rawImageNormalized.x * CGFloat(depthWidth - 1))), min: 0, max: depthWidth - 1)
+        let centerY = clamp(Int(round(rawImageNormalized.y * CGFloat(depthHeight - 1))), min: 0, max: depthHeight - 1)
 
         CVPixelBufferLockBaseAddress(depthMap, .readOnly)
-        if let confidenceMap {
+        if let confidenceMap = depthData.confidenceMap {
             CVPixelBufferLockBaseAddress(confidenceMap, .readOnly)
         }
         defer {
-            if let confidenceMap {
+            if let confidenceMap = depthData.confidenceMap {
                 CVPixelBufferUnlockBaseAddress(confidenceMap, .readOnly)
             }
             CVPixelBufferUnlockBaseAddress(depthMap, .readOnly)
@@ -45,20 +71,29 @@ enum DepthSampler {
 
         guard let depthBaseAddress = CVPixelBufferGetBaseAddress(depthMap) else { return nil }
         let depthBytesPerRow = CVPixelBufferGetBytesPerRow(depthMap)
+        let confidenceMap = depthData.confidenceMap
         let confidenceBaseAddress = confidenceMap.flatMap { CVPixelBufferGetBaseAddress($0) }
         let confidenceBytesPerRow = confidenceMap.map { CVPixelBufferGetBytesPerRow($0) } ?? 0
         let confidenceMatchesDepth = confidenceMap.map {
-            CVPixelBufferGetWidth($0) == width && CVPixelBufferGetHeight($0) == height
+            CVPixelBufferGetWidth($0) == depthWidth && CVPixelBufferGetHeight($0) == depthHeight
         } ?? false
 
         let radius = max(0, kernelSize / 2)
         var samples: [Float] = []
+        let centerConfidence = confidenceBaseAddress.flatMap {
+            readConfidenceRaw(
+                confidenceBaseAddress: $0,
+                bytesPerRow: confidenceBytesPerRow,
+                x: centerX,
+                y: centerY
+            )
+        }
 
         for yOffset in -radius...radius {
             for xOffset in -radius...radius {
                 let x = centerX + xOffset
                 let y = centerY + yOffset
-                guard x >= 0, x < width, y >= 0, y < height else { continue }
+                guard x >= 0, x < depthWidth, y >= 0, y < depthHeight else { continue }
 
                 if confidenceMatchesDepth,
                    let confidenceBaseAddress,
@@ -73,15 +108,61 @@ enum DepthSampler {
 
                 let row = depthBaseAddress.advanced(by: y * depthBytesPerRow)
                 let value = row.assumingMemoryBound(to: Float32.self)[x]
-                if value.isFinite && value > 0 {
+                if value.isFinite && value >= 0.10 && value <= 2.00 {
                     samples.append(value)
                 }
             }
         }
 
-        guard !samples.isEmpty else { return nil }
+        guard samples.count >= 4 else { return nil }
         samples.sort()
-        return Double(samples[samples.count / 2])
+        let percentileIndex = clamp(Int(Float(samples.count - 1) * 0.20), min: 0, max: samples.count - 1)
+        let selectedDepth = samples[percentileIndex]
+
+        return DepthSampleResult(
+            depthMeters: Double(selectedDepth),
+            sampleDisplayPoint: convertVisionPointToNormalizedDisplay(sampleVisionPoint),
+            rawImageNormalized: HandJoint2D(
+                x: Double(rawImageNormalized.x),
+                y: Double(rawImageNormalized.y)
+            ),
+            depthPixel: PixelPoint(x: centerX, y: centerY),
+            depthMapSize: PixelSize(w: depthWidth, h: depthHeight),
+            capturedImageSize: PixelSize(
+                w: CVPixelBufferGetWidth(capturedImage),
+                h: CVPixelBufferGetHeight(capturedImage)
+            ),
+            visionOrientation: "right",
+            depthConfidenceRaw: centerConfidence.map(Int.init),
+            depthSource: depthSource,
+            depthStrategy: strategy,
+            sampleCount: samples.count
+        )
+    }
+
+    static func convertVisionPointToNormalizedDisplay(_ point: CGPoint) -> HandJoint2D {
+        HandJoint2D(
+            x: Double(point.x),
+            y: Double(1.0 - point.y)
+        )
+    }
+
+    // For the current installation we intentionally lock the math to back camera + portrait
+    // + VNImageRequestHandler orientation .right. If the yellow dot and depth sample move in
+    // opposite directions on-device, this inverse rotation is the first place to adjust.
+    private static func visionPointToRawImageNormalizedPortraitBack(_ point: CGPoint) -> CGPoint {
+        let orientedTopLeft = CGPoint(x: point.x, y: 1.0 - point.y)
+        return CGPoint(
+            x: orientedTopLeft.y,
+            y: 1.0 - orientedTopLeft.x
+        )
+    }
+
+    private static func lerp(_ a: CGPoint, _ b: CGPoint, t: CGFloat) -> CGPoint {
+        CGPoint(
+            x: a.x + (b.x - a.x) * t,
+            y: a.y + (b.y - a.y) * t
+        )
     }
 
     private static func isDepthConfidenceUsable(
@@ -90,15 +171,29 @@ enum DepthSampler {
         x: Int,
         y: Int
     ) -> Bool {
-        // ARKit confidence maps are UInt8-like values where 0 is the lowest confidence.
-        // We currently reject only the lowest confidence and keep medium/high samples.
-        let row = confidenceBaseAddress.advanced(by: y * bytesPerRow)
-        let confidence = row.assumingMemoryBound(to: UInt8.self)[x]
+        guard let confidence = readConfidenceRaw(
+            confidenceBaseAddress: confidenceBaseAddress,
+            bytesPerRow: bytesPerRow,
+            x: x,
+            y: y
+        ) else {
+            return false
+        }
+
         return confidence > 0
+    }
+
+    private static func readConfidenceRaw(
+        confidenceBaseAddress: UnsafeMutableRawPointer,
+        bytesPerRow: Int,
+        x: Int,
+        y: Int
+    ) -> UInt8? {
+        let row = confidenceBaseAddress.advanced(by: y * bytesPerRow)
+        return row.assumingMemoryBound(to: UInt8.self)[x]
     }
 
     private static func clamp(_ value: Int, min minValue: Int, max maxValue: Int) -> Int {
         Swift.max(minValue, Swift.min(maxValue, value))
     }
 }
-

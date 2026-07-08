@@ -312,6 +312,16 @@ private struct TouchTestDebug: Encodable {
     let indexTip3DSpace: String
     let depthMeters: Double?
     let fingerTips2D: FingerTips2D
+    let depthSample2D: HandJoint2D?
+    let rawImageNorm: HandJoint2D?
+    let depthPixel: PixelPoint?
+    let depthMapSize: PixelSize?
+    let capturedImageSize: PixelSize?
+    let visionOrientation: String?
+    let depthConfidenceRaw: Int?
+    let depthSource: String?
+    let depthStrategy: String?
+    let depthSampleCount: Int?
     let fps = 30.0
 
     init(handPose: HandPoseSnapshot) {
@@ -320,6 +330,16 @@ private struct TouchTestDebug: Encodable {
         self.indexTip3DSpace = handPose.indexTip3DSpace
         self.depthMeters = handPose.indexTipDepthMeters
         self.fingerTips2D = handPose.fingerTips
+        self.depthSample2D = handPose.depthDebug?.depthSample2D
+        self.rawImageNorm = handPose.depthDebug?.rawImageNorm
+        self.depthPixel = handPose.depthDebug?.depthPixel
+        self.depthMapSize = handPose.depthDebug?.depthMapSize
+        self.capturedImageSize = handPose.depthDebug?.capturedImageSize
+        self.visionOrientation = handPose.depthDebug?.visionOrientation
+        self.depthConfidenceRaw = handPose.depthDebug?.depthConfidenceRaw
+        self.depthSource = handPose.depthDebug?.depthSource
+        self.depthStrategy = handPose.depthDebug?.depthStrategy
+        self.depthSampleCount = handPose.depthDebug?.depthSampleCount
     }
 
     enum CodingKeys: String, CodingKey {
@@ -328,6 +348,16 @@ private struct TouchTestDebug: Encodable {
         case indexTip3DSpace
         case depthMeters
         case fingerTips2D
+        case depthSample2D
+        case rawImageNorm
+        case depthPixel
+        case depthMapSize
+        case capturedImageSize
+        case visionOrientation
+        case depthConfidenceRaw
+        case depthSource
+        case depthStrategy
+        case depthSampleCount
         case fps
     }
 
@@ -338,6 +368,16 @@ private struct TouchTestDebug: Encodable {
         try container.encode(indexTip3DSpace, forKey: .indexTip3DSpace)
         try container.encodeOptionalAsNull(depthMeters, forKey: .depthMeters)
         try container.encode(fingerTips2D, forKey: .fingerTips2D)
+        try container.encodeOptionalAsNull(depthSample2D, forKey: .depthSample2D)
+        try container.encodeOptionalAsNull(rawImageNorm, forKey: .rawImageNorm)
+        try container.encodeOptionalAsNull(depthPixel, forKey: .depthPixel)
+        try container.encodeOptionalAsNull(depthMapSize, forKey: .depthMapSize)
+        try container.encodeOptionalAsNull(capturedImageSize, forKey: .capturedImageSize)
+        try container.encodeOptionalAsNull(visionOrientation, forKey: .visionOrientation)
+        try container.encodeOptionalAsNull(depthConfidenceRaw, forKey: .depthConfidenceRaw)
+        try container.encodeOptionalAsNull(depthSource, forKey: .depthSource)
+        try container.encodeOptionalAsNull(depthStrategy, forKey: .depthStrategy)
+        try container.encodeOptionalAsNull(depthSampleCount, forKey: .depthSampleCount)
         try container.encode(fps, forKey: .fps)
     }
 }

@@ -148,7 +148,8 @@ h2 {
 }
 
 .camera-plane,
-.world-plane {
+.world-plane,
+.depth-plane {
   position: relative;
   overflow: hidden;
   aspect-ratio: 16 / 9;
@@ -167,17 +168,31 @@ h2 {
   min-height: 260px;
 }
 
+.depth-plane {
+  aspect-ratio: 4 / 3;
+  min-height: 220px;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(239, 207, 120, 0.16), transparent 36%),
+    linear-gradient(#263039 1px, transparent 1px),
+    linear-gradient(90deg, #263039 1px, transparent 1px),
+    #101418;
+  background-size: auto, 12.5% 12.5%, 12.5% 12.5%;
+}
+
 .camera-plane::before,
 .camera-plane::after,
 .world-plane::before,
-.world-plane::after {
+.world-plane::after,
+.depth-plane::before,
+.depth-plane::after {
   position: absolute;
   content: "";
   background: #46535f;
 }
 
 .camera-plane::before,
-.world-plane::before {
+.world-plane::before,
+.depth-plane::before {
   top: 50%;
   left: 0;
   width: 100%;
@@ -185,7 +200,8 @@ h2 {
 }
 
 .camera-plane::after,
-.world-plane::after {
+.world-plane::after,
+.depth-plane::after {
   top: 0;
   left: 50%;
   width: 1px;
@@ -232,6 +248,32 @@ h2 {
 .finger-dot.world {
   background: #5fd0b4;
   box-shadow: 0 0 0 5px rgba(95, 208, 180, 0.2), 0 0 28px rgba(95, 208, 180, 0.36);
+}
+
+.finger-dot.sample {
+  width: 34px;
+  height: 34px;
+  border: 3px solid #f08a4b;
+  background: transparent;
+  box-shadow: 0 0 0 4px rgba(240, 138, 75, 0.22), 0 0 26px rgba(240, 138, 75, 0.4);
+}
+
+.sample-window {
+  position: absolute;
+  z-index: 3;
+  width: 42px;
+  height: 42px;
+  border: 3px solid #f08a4b;
+  border-radius: 6px;
+  background: rgba(240, 138, 75, 0.16);
+  box-shadow: 0 0 0 5px rgba(240, 138, 75, 0.18), 0 0 28px rgba(240, 138, 75, 0.34);
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  transition: left 120ms linear, top 120ms linear, opacity 120ms ease;
+}
+
+.sample-window.visible {
+  opacity: 1;
 }
 
 .axis {

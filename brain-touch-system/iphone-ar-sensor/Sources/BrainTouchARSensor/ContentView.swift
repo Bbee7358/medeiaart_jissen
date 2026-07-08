@@ -26,6 +26,8 @@ struct ContentView: View {
                     DebugRow(label: "indexTip normalized y", value: sessionModel.indexTipYText)
                     DebugRow(label: "indexTip depth", value: sessionModel.indexTipDepthText)
                     DebugRow(label: "indexTip 3D", value: sessionModel.indexTip3DText)
+                    DebugRow(label: "depth sample", value: sessionModel.depthSampleText)
+                    DebugRow(label: "depth confidence", value: sessionModel.depthConfidenceText)
                     DebugRow(label: "confidence", value: sessionModel.handConfidenceText)
 
                     if !sessionModel.isDepthAvailable {

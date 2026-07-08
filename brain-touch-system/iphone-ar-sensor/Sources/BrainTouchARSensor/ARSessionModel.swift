@@ -16,6 +16,8 @@ final class ARSessionModel: NSObject, ObservableObject {
     @Published var indexTipDepthText = "-"
     @Published var indexTip3DText = "-"
     @Published var handConfidenceText = "-"
+    @Published var depthSampleText = "-"
+    @Published var depthConfidenceText = "-"
 
     private var lastFrameTimestamp: TimeInterval?
     private var lastHandPoseTimestamp: TimeInterval = 0
@@ -54,12 +56,19 @@ extension ARSessionModel: ARSessionDelegate {
         let timestamp = frame.timestamp
         let hasDepth = frame.smoothedSceneDepth != nil || frame.sceneDepth != nil
         let depthData = frame.smoothedSceneDepth ?? frame.sceneDepth
+        let depthSource = frame.smoothedSceneDepth != nil ? "smoothedSceneDepth" : (frame.sceneDepth != nil ? "sceneDepth" : "none")
         let pixelBuffer = frame.capturedImage
         let camera = frame.camera
 
         Task { @MainActor in
             self.updateFrameMetrics(timestamp: timestamp, hasDepth: hasDepth)
-            self.detectHandPoseIfNeeded(pixelBuffer: pixelBuffer, depthData: depthData, camera: camera, timestamp: timestamp)
+            self.detectHandPoseIfNeeded(
+                pixelBuffer: pixelBuffer,
+                depthData: depthData,
+                depthSource: depthSource,
+                camera: camera,
+                timestamp: timestamp
+            )
         }
     }
 
@@ -118,7 +127,13 @@ private extension ARSessionModel {
         depthStatus = hasDepth ? "available" : "unavailable"
     }
 
-    func detectHandPoseIfNeeded(pixelBuffer: CVPixelBuffer, depthData: ARDepthData?, camera: ARCamera, timestamp: TimeInterval) {
+    func detectHandPoseIfNeeded(
+        pixelBuffer: CVPixelBuffer,
+        depthData: ARDepthData?,
+        depthSource: String,
+        camera: ARCamera,
+        timestamp: TimeInterval
+    ) {
         guard timestamp - lastHandPoseTimestamp >= handPoseInterval else { return }
         lastHandPoseTimestamp = timestamp
 
@@ -139,7 +154,13 @@ private extension ARSessionModel {
                 return
             }
 
-            updateHandPose(makeHandPoseSnapshot(from: observation, depthData: depthData, camera: camera))
+            updateHandPose(makeHandPoseSnapshot(
+                from: observation,
+                depthData: depthData,
+                depthSource: depthSource,
+                capturedImage: pixelBuffer,
+                camera: camera
+            ))
         } catch {
             indexTip3DSmoother.reset()
             updateHandPose(.empty)
@@ -156,43 +177,76 @@ private extension ARSessionModel {
             String(format: "x %.3f, y %.3f, z %.3f m", $0.x, $0.y, $0.z)
         } ?? "-"
         handConfidenceText = String(format: "%.2f", snapshot.confidence)
+        if let debug = snapshot.depthDebug,
+           let pixel = debug.depthPixel,
+           let size = debug.depthMapSize {
+            depthSampleText = "px \(pixel.x),\(pixel.y) / \(size.w)x\(size.h)"
+            depthConfidenceText = debug.depthConfidenceRaw.map(String.init) ?? "-"
+        } else {
+            depthSampleText = "-"
+            depthConfidenceText = "-"
+        }
     }
 
-    func makeHandPoseSnapshot(from observation: VNHumanHandPoseObservation, depthData: ARDepthData?, camera: ARCamera) -> HandPoseSnapshot {
+    func makeHandPoseSnapshot(
+        from observation: VNHumanHandPoseObservation,
+        depthData: ARDepthData?,
+        depthSource: String,
+        capturedImage: CVPixelBuffer,
+        camera: ARCamera
+    ) -> HandPoseSnapshot {
         let wrist = recognizedJoint(.wrist, from: observation)
         let thumbTip = recognizedJoint(.thumbTip, from: observation)
         let indexTip = recognizedJoint(.indexTip, from: observation)
+        let indexDIP = recognizedJoint(.indexDIP, from: observation)
         let middleTip = recognizedJoint(.middleTip, from: observation)
         let ringTip = recognizedJoint(.ringTip, from: observation)
         let littleTip = recognizedJoint(.littleTip, from: observation)
 
         let confidence = Double(indexTip?.confidence ?? 0)
         let detected = indexTip != nil && confidence > 0.2
-        let depthMeters = DepthSampler.sampleDepthMeters(
-            at: detected ? indexTip?.point : nil,
-            from: depthData,
-            kernelSize: 5
+        let depthSample = DepthSampler.sampleIndexFingerDepth(
+            indexTipVisionPoint: detected ? indexTip?.visionPoint : nil,
+            indexDIPVisionPoint: indexDIP?.visionPoint,
+            depthData: depthData,
+            capturedImage: capturedImage,
+            depthSource: depthSource,
+            kernelSize: 7
         )
-        let rawIndexTip3D = PointUnprojector.unprojectPoint(
-            normalizedPoint: detected ? indexTip?.point : nil,
-            depthMeters: depthMeters,
+        let rawIndexTip3D = PointUnprojector.unprojectDepthSample(
+            depthSample,
             camera: camera
         )
         let smoothedIndexTip3D = indexTip3DSmoother.append(rawIndexTip3D)
+        let depthDebug = depthSample.map {
+            DepthSamplingDebug(
+                depthSample2D: $0.sampleDisplayPoint,
+                rawImageNorm: $0.rawImageNormalized,
+                depthPixel: $0.depthPixel,
+                depthMapSize: $0.depthMapSize,
+                capturedImageSize: $0.capturedImageSize,
+                visionOrientation: $0.visionOrientation,
+                depthConfidenceRaw: $0.depthConfidenceRaw,
+                depthSource: $0.depthSource,
+                depthStrategy: $0.depthStrategy,
+                depthSampleCount: $0.sampleCount
+            )
+        }
 
         return HandPoseSnapshot(
             handDetected: detected,
-            wrist: wrist?.point,
+            wrist: wrist?.displayPoint,
             fingerTips: FingerTips2D(
-                thumbTip: thumbTip?.point,
-                indexTip: indexTip?.point,
-                middleTip: middleTip?.point,
-                ringTip: ringTip?.point,
-                littleTip: littleTip?.point
+                thumbTip: thumbTip?.displayPoint,
+                indexTip: indexTip?.displayPoint,
+                middleTip: middleTip?.displayPoint,
+                ringTip: ringTip?.displayPoint,
+                littleTip: littleTip?.displayPoint
             ),
-            indexTipDepthMeters: depthMeters,
+            indexTipDepthMeters: depthSample?.depthMeters,
             indexTip3D: smoothedIndexTip3D,
             indexTip3DSpace: PointUnprojector.outputCoordinateSpace,
+            depthDebug: depthDebug,
             confidence: detected ? confidence : 0
         )
     }
@@ -200,24 +254,16 @@ private extension ARSessionModel {
     func recognizedJoint(
         _ jointName: VNHumanHandPoseObservation.JointName,
         from observation: VNHumanHandPoseObservation
-    ) -> (point: HandJoint2D, confidence: Float)? {
+    ) -> RecognizedHandJoint? {
         guard let recognizedPoint = try? observation.recognizedPoint(jointName),
               recognizedPoint.confidence > 0 else {
             return nil
         }
 
-        return (
-            point: convertVisionPointToNormalizedDisplay(recognizedPoint.location),
+        return RecognizedHandJoint(
+            displayPoint: DepthSampler.convertVisionPointToNormalizedDisplay(recognizedPoint.location),
+            visionPoint: recognizedPoint.location,
             confidence: recognizedPoint.confidence
-        )
-    }
-
-    func convertVisionPointToNormalizedDisplay(_ point: CGPoint) -> HandJoint2D {
-        // TODO: Verify mirror/orientation against the actual mounted iPhone camera view.
-        // Vision normalized coordinates use a lower-left origin; the debug UI expects top-left origin.
-        HandJoint2D(
-            x: Double(point.x),
-            y: Double(1.0 - point.y)
         )
     }
 
@@ -242,4 +288,10 @@ private extension ARCamera.TrackingState.Reason {
             return "unknown"
         }
     }
+}
+
+private struct RecognizedHandJoint {
+    let displayPoint: HandJoint2D
+    let visionPoint: CGPoint
+    let confidence: Float
 }

@@ -98,28 +98,46 @@ Apple Visionの `VNDetectHumanHandPoseRequest` を使い、ARKitの `ARFrame.cap
 - `indexTip normalized x`
 - `indexTip normalized y`
 - `indexTip depth`
+- `depth sample`
+- `depth confidence`
 - `confidence`
 
-Visionの正規化座標は左下原点のため、`ARSessionModel.convertVisionPointToNormalizedDisplay(_:)` でデバッグ表示向けに上方向を反転しています。実際の展示時のiPhone固定向きやフロント/バックカメラの見え方によって左右反転・回転の調整が必要になる可能性があるため、該当関数にTODOを残しています。
+Visionの正規化座標は左下原点のため、画面表示用には上方向を反転しています。深度サンプリング用には、縦向き・背面カメラ・`VNImageRequestHandler` の `orientation: .right` を前提に、Vision座標をARKit captured imageのネイティブ座標へ戻してからdepth mapへ変換しています。実際の展示時のiPhone固定向きによって左右反転・回転の調整が必要になる可能性があります。
 
 ## LiDAR深度サンプリング
 
-`DepthSampler.sampleDepthMeters(...)` で、Visionから得た `indexTip2D` に対応するLiDAR深度を取得します。
+`DepthSampler.sampleIndexFingerDepth(...)` で、Visionから得た人差し指座標に対応するLiDAR深度を取得します。
 
 処理:
 
 1. `ARFrame.smoothedSceneDepth` を優先して取得する
 2. なければ `ARFrame.sceneDepth` を使う
-3. `indexTip2D` の正規化座標を深度マップのピクセル座標へ変換する
-4. 周辺5x5ピクセルをサンプリングする
-5. confidence map がある場合、最低信頼度のサンプルを除外する
-6. 有効な深度値の中央値を `depthMeters` として使う
+3. `indexTip` ちょうどではなく、`indexTip` から `indexDIP` 側へ25%戻した点を深度サンプル点にする
+4. Vision座標を captured image のネイティブ正規化座標へ変換する
+5. captured image正規化座標をdepth mapピクセルへ変換する
+6. 周辺7x7ピクセルをサンプリングする
+7. confidence map がある場合、最低信頼度のサンプルを除外する
+8. 0.10mから2.00mの有効な深度だけを残す
+9. 指先が背景より手前にある前提で、中央値ではなく20パーセンタイルを `depthMeters` として使う
 
 深度が取れない場合、`debug.depthMeters` は `null` になります。
 
+送信JSONには、原因分析用に以下も入ります。
+
+- `debug.depthSample2D`
+- `debug.rawImageNorm`
+- `debug.depthPixel`
+- `debug.depthMapSize`
+- `debug.capturedImageSize`
+- `debug.visionOrientation`
+- `debug.depthConfidenceRaw`
+- `debug.depthSource`
+- `debug.depthStrategy`
+- `debug.depthSampleCount`
+
 注意:
 
-深度マップはカメラ画像と解像度が異なります。そのため、カメラ画像のピクセル座標ではなく、0から1の正規化座標を経由して深度マップへ変換しています。ただし、実機の固定向きによって深度マップとVision座標の回転・左右反転がずれる可能性があります。現場で表示を見ながら `DepthSampler` と `convertVisionPointToNormalizedDisplay(_:)` の変換を確認してください。
+現在は縦向き・背面カメラ・`orientation: .right` 固定で検証する前提です。PCダッシュボードで、黄色い点がVisionの `indexTip`、オレンジのリングが実際にdepthを読むサンプル点です。指を画面の左上、右上、左下、右下に動かし、黄色い点とオレンジのリングが同じ方向へ動くか確認してください。逆方向に動く場合は、`DepthSampler.visionPointToRawImageNormalizedPortraitBack(_:)` の変換候補を調整します。
 
 ## PC側との接続手順
 
@@ -180,10 +198,15 @@ Visionで手を検出できた場合は、以下も送信します。
 - `debug.depthMeters`
 - `debug.indexTip3D`
 - `debug.indexTip3DSpace`
+- `debug.depthSample2D`
+- `debug.rawImageNorm`
+- `debug.depthPixel`
+- `debug.depthConfidenceRaw`
+- `debug.depthStrategy`
 
 ## 指先3D座標
 
-`PointUnprojector.unprojectPoint(...)` で、Visionの `indexTip2D` とLiDARの `depthMeters` を使い、指先の3D座標を計算します。
+`PointUnprojector.unprojectDepthSample(...)` で、depth map上のサンプルピクセルとLiDARの `depthMeters` を使い、指先の3D座標を計算します。
 
 現在送信する `debug.indexTip3D` は `debug.indexTip3DSpace: "arkit_world"` の座標です。単位はメートルです。
 
@@ -194,7 +217,7 @@ ARKitワールド座標系:
 - `x`, `y`, `z` はARKitのワールド空間上の位置
 - カメラが動いても同じ実空間上の点は近いワールド座標として扱える
 
-内部では一度カメラ座標へ戻してから、`ARFrame.camera.transform` でワールド座標へ変換しています。
+内部では、`ARCamera.intrinsics` をdepth map解像度へスケールし、一度カメラ座標へ戻してから、`ARFrame.camera.transform` でワールド座標へ変換しています。
 
 カメラ座標系の前提:
 

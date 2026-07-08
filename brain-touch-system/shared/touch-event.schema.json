@@ -145,6 +145,39 @@
           "type": ["number", "null"],
           "minimum": 0
         },
+        "depthSample2D": {
+          "$ref": "#/$defs/point2D"
+        },
+        "rawImageNorm": {
+          "$ref": "#/$defs/point2D"
+        },
+        "depthPixel": {
+          "$ref": "#/$defs/pixelPoint"
+        },
+        "depthMapSize": {
+          "$ref": "#/$defs/pixelSize"
+        },
+        "capturedImageSize": {
+          "$ref": "#/$defs/pixelSize"
+        },
+        "visionOrientation": {
+          "type": ["string", "null"]
+        },
+        "depthConfidenceRaw": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "depthSource": {
+          "type": ["string", "null"],
+          "enum": ["smoothedSceneDepth", "sceneDepth", "none", null]
+        },
+        "depthStrategy": {
+          "type": ["string", "null"]
+        },
+        "depthSampleCount": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
         "fps": {
           "type": "number",
           "minimum": 0
@@ -167,6 +200,36 @@
           "type": "number",
           "minimum": 0,
           "maximum": 1
+        }
+      }
+    },
+    "pixelPoint": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["x", "y"],
+      "properties": {
+        "x": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "y": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "pixelSize": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["w", "h"],
+      "properties": {
+        "w": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "h": {
+          "type": "integer",
+          "minimum": 1
         }
       }
     },

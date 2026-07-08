@@ -11,6 +11,29 @@ struct HandJoint3D: Codable, Equatable {
     let z: Double
 }
 
+struct PixelPoint: Codable, Equatable {
+    let x: Int
+    let y: Int
+}
+
+struct PixelSize: Codable, Equatable {
+    let w: Int
+    let h: Int
+}
+
+struct DepthSamplingDebug: Codable, Equatable {
+    let depthSample2D: HandJoint2D?
+    let rawImageNorm: HandJoint2D?
+    let depthPixel: PixelPoint?
+    let depthMapSize: PixelSize?
+    let capturedImageSize: PixelSize?
+    let visionOrientation: String
+    let depthConfidenceRaw: Int?
+    let depthSource: String
+    let depthStrategy: String
+    let depthSampleCount: Int
+}
+
 struct FingerTips2D: Codable, Equatable {
     let thumbTip: HandJoint2D?
     let indexTip: HandJoint2D?
@@ -43,6 +66,7 @@ struct HandPoseSnapshot: Equatable {
     let indexTipDepthMeters: Double?
     let indexTip3D: HandJoint3D?
     let indexTip3DSpace: String
+    let depthDebug: DepthSamplingDebug?
     let confidence: Double
 
     static let empty = HandPoseSnapshot(
@@ -58,6 +82,7 @@ struct HandPoseSnapshot: Equatable {
         indexTipDepthMeters: nil,
         indexTip3D: nil,
         indexTip3DSpace: "arkit_world",
+        depthDebug: nil,
         confidence: 0
     )
 }
