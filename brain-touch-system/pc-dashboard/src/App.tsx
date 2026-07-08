@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { DailyStats, DashboardStatus, PixelPoint, PixelSize, Point2D, Point3D, ServerDiagnostics, ServerMessage, SettingsUpdatePayload, TouchEventMessage } from "./types";
+import type { DailyStats, DashboardStatus, PerformanceOutputSettings, PixelPoint, PixelSize, Point2D, Point3D, ServerDiagnostics, ServerMessage, SettingsUpdatePayload, TouchEventMessage } from "./types";
 
 const WS_URL = "ws://127.0.0.1:8787";
 const MAX_LOGS = 10;
 const THRESHOLDS_STORAGE_KEY = "brain-touch-dashboard.thresholds.v1";
+const PERFORMANCE_OUTPUT_STORAGE_KEY = "brain-touch-dashboard.performance-output.v1";
 
 type ThresholdSettings = {
   touchThresholdCm: number;
@@ -19,6 +20,12 @@ const DEFAULT_THRESHOLDS: ThresholdSettings = {
   dwellTimeSeconds: 0.5,
   confidenceThreshold: 0.75,
   smoothingFrames: 5
+};
+
+const DEFAULT_PERFORMANCE_OUTPUT: PerformanceOutputSettings = {
+  enabled: false,
+  confirmedOnly: true,
+  confidenceThreshold: 0.75
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -106,6 +113,22 @@ function loadThresholdSettings(): ThresholdSettings {
   }
 }
 
+function loadPerformanceOutputSettings(): PerformanceOutputSettings {
+  try {
+    const raw = window.localStorage.getItem(PERFORMANCE_OUTPUT_STORAGE_KEY);
+    if (!raw) return DEFAULT_PERFORMANCE_OUTPUT;
+
+    const parsed = JSON.parse(raw) as Partial<PerformanceOutputSettings>;
+    return {
+      enabled: Boolean(parsed.enabled ?? DEFAULT_PERFORMANCE_OUTPUT.enabled),
+      confirmedOnly: parsed.confirmedOnly === undefined ? DEFAULT_PERFORMANCE_OUTPUT.confirmedOnly : Boolean(parsed.confirmedOnly),
+      confidenceThreshold: clamp(Number(parsed.confidenceThreshold ?? DEFAULT_PERFORMANCE_OUTPUT.confidenceThreshold), 0, 1)
+    };
+  } catch {
+    return DEFAULT_PERFORMANCE_OUTPUT;
+  }
+}
+
 function statusLabel(status: DashboardStatus): string {
   switch (status) {
     case "connecting":
@@ -135,6 +158,10 @@ function isSettingsUpdateMessage(message: ServerMessage): message is { type: "se
   return "type" in message && message.type === "settings_update";
 }
 
+function isPerformanceOutputSettingsMessage(message: ServerMessage): message is { type: "performance_output_settings"; payload: PerformanceOutputSettings } {
+  return "type" in message && message.type === "performance_output_settings";
+}
+
 function isPingPongMessage(message: ServerMessage): message is { type: "ping" | "pong"; timestamp?: number } {
   return "type" in message && (message.type === "ping" || message.type === "pong");
 }
@@ -157,15 +184,24 @@ function App() {
   const [dailyStats, setDailyStats] = useState<DailyStats | null>(null);
   const [serverDiagnostics, setServerDiagnostics] = useState<ServerDiagnostics | null>(null);
   const [thresholds, setThresholds] = useState<ThresholdSettings>(() => loadThresholdSettings());
+  const [performanceOutput, setPerformanceOutput] = useState<PerformanceOutputSettings>(() => loadPerformanceOutputSettings());
   const [lastSettingsSentAt, setLastSettingsSentAt] = useState<number | null>(null);
   const [settingsSendStatus, setSettingsSendStatus] = useState("not sent");
+  const [lastPerformanceSettingsSentAt, setLastPerformanceSettingsSentAt] = useState<number | null>(null);
+  const [performanceSettingsStatus, setPerformanceSettingsStatus] = useState("not sent");
   const socketRef = useRef<WebSocket | null>(null);
   const thresholdsRef = useRef(thresholds);
+  const performanceOutputRef = useRef(performanceOutput);
 
   useEffect(() => {
     window.localStorage.setItem(THRESHOLDS_STORAGE_KEY, JSON.stringify(thresholds));
     thresholdsRef.current = thresholds;
   }, [thresholds]);
+
+  useEffect(() => {
+    window.localStorage.setItem(PERFORMANCE_OUTPUT_STORAGE_KEY, JSON.stringify(performanceOutput));
+    performanceOutputRef.current = performanceOutput;
+  }, [performanceOutput]);
 
   const settingsPayload = useMemo(() => buildSettingsPayload(thresholds), [thresholds]);
 
@@ -181,9 +217,25 @@ function App() {
     setSettingsSendStatus("sent to server");
   };
 
+  const sendPerformanceOutputSettings = (payload: PerformanceOutputSettings) => {
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      setPerformanceSettingsStatus("waiting for WebSocket");
+      return;
+    }
+
+    socket.send(JSON.stringify({ type: "performance_output_settings", payload }));
+    setLastPerformanceSettingsSentAt(Date.now());
+    setPerformanceSettingsStatus("sent to server");
+  };
+
   useEffect(() => {
     sendSettingsUpdate(settingsPayload);
   }, [settingsPayload]);
+
+  useEffect(() => {
+    sendPerformanceOutputSettings(performanceOutput);
+  }, [performanceOutput]);
 
   useEffect(() => {
     let reconnectTimer: number | undefined;
@@ -198,6 +250,7 @@ function App() {
       socket.addEventListener("open", () => {
         setStatus("connected");
         sendSettingsUpdate(buildSettingsPayload(thresholdsRef.current));
+        sendPerformanceOutputSettings(performanceOutputRef.current);
       });
 
       socket.addEventListener("message", (event) => {
@@ -216,6 +269,11 @@ function App() {
 
           if (isSettingsUpdateMessage(parsed)) {
             setSettingsSendStatus("server has latest settings");
+            return;
+          }
+
+          if (isPerformanceOutputSettingsMessage(parsed)) {
+            setPerformanceSettingsStatus("server has latest output settings");
             return;
           }
 
@@ -295,6 +353,16 @@ function App() {
     setThresholds((current) => ({
       ...current,
       [key]: key === "smoothingFrames" ? Math.round(value) : value
+    }));
+  };
+
+  const updatePerformanceOutput = <Key extends keyof PerformanceOutputSettings>(
+    key: Key,
+    value: PerformanceOutputSettings[Key]
+  ) => {
+    setPerformanceOutput((current) => ({
+      ...current,
+      [key]: value
     }));
   };
 
@@ -416,6 +484,72 @@ function App() {
         </div>
       </section>
 
+      <section className="panel performance-panel">
+        <div className="panel-heading">
+          <h2>Performance Output</h2>
+          <span className={`condition-pill ${performanceOutput.enabled ? "ok" : "ng"}`}>
+            {performanceOutput.enabled ? "演出出力ON" : "演出出力OFF"}
+          </span>
+        </div>
+
+        <div className="performance-layout">
+          <div className="toggle-stack">
+            <label className="toggle-row">
+              <span>演出出力ON/OFF</span>
+              <input
+                type="checkbox"
+                checked={performanceOutput.enabled}
+                onChange={(event) => updatePerformanceOutput("enabled", event.currentTarget.checked)}
+              />
+            </label>
+            <label className="toggle-row">
+              <span>確定イベントだけ送る</span>
+              <input
+                type="checkbox"
+                checked={performanceOutput.confirmedOnly}
+                onChange={(event) => updatePerformanceOutput("confirmedOnly", event.currentTarget.checked)}
+              />
+            </label>
+            <ThresholdControl
+              label="performance confidence"
+              value={performanceOutput.confidenceThreshold}
+              min={0}
+              max={1}
+              step={0.05}
+              unit=""
+              onChange={(value) => updatePerformanceOutput("confidenceThreshold", value)}
+            />
+          </div>
+
+          <div className="threshold-checks">
+            <ThresholdCheck
+              label="relay port"
+              current="8788"
+              target="ws://<PC>:8788"
+              ok={performanceOutput.enabled}
+            />
+            <ThresholdCheck
+              label="relay clients"
+              current={String(serverDiagnostics?.performanceClientCount ?? 0)}
+              target={serverDiagnostics?.performanceWebSocketUrls?.join(" / ") || "ws://127.0.0.1:8788"}
+              ok={(serverDiagnostics?.performanceClientCount ?? 0) > 0}
+            />
+            <ThresholdCheck
+              label="last output"
+              current={serverDiagnostics?.lastPerformanceEventAt ? formatTime(serverDiagnostics.lastPerformanceEventAt) : "-"}
+              target={serverDiagnostics?.lastPerformanceEventRegion ?? "waiting"}
+              ok={!!serverDiagnostics?.lastPerformanceEventAt}
+            />
+            <ThresholdCheck
+              label="output settings"
+              current={performanceSettingsStatus}
+              target={lastPerformanceSettingsSentAt ? formatTime(lastPerformanceSettingsSentAt) : "not sent yet"}
+              ok={performanceSettingsStatus.includes("sent") || performanceSettingsStatus.includes("latest")}
+            />
+          </div>
+        </div>
+      </section>
+
       <section className="visual-grid">
         <article className="panel visual-panel">
           <h2>Index Tip 2D</h2>
@@ -518,6 +652,22 @@ function App() {
           <div>
             <dt>last settings sender</dt>
             <dd>{serverDiagnostics?.lastSettingsRemote ?? "-"}</dd>
+          </div>
+          <div>
+            <dt>performance output</dt>
+            <dd>{serverDiagnostics ? (serverDiagnostics.performanceOutputEnabled ? "on" : "off") : "-"}</dd>
+          </div>
+          <div>
+            <dt>performance clients</dt>
+            <dd>{serverDiagnostics?.performanceClientCount ?? "-"}</dd>
+          </div>
+          <div>
+            <dt>performance WebSocket URL</dt>
+            <dd>{serverDiagnostics?.performanceWebSocketUrls?.join(" / ") || "-"}</dd>
+          </div>
+          <div>
+            <dt>last performance event</dt>
+            <dd>{serverDiagnostics?.lastPerformanceEventAt ? formatTime(serverDiagnostics.lastPerformanceEventAt) : "-"}</dd>
           </div>
           <div>
             <dt>Mac IP candidates</dt>

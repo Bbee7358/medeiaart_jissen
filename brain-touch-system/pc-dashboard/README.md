@@ -7,6 +7,7 @@ iPhone 12 Proから送られてくる脳模型タッチ判定JSONをWebSocketで
 ## Ports
 
 - WebSocket server: `8787`
+- Performance WebSocket relay: `8788`
 - Vite dev server: `5173`
 
 ## Setup
@@ -96,6 +97,62 @@ logs/touch-events-2026-07-08.jsonl
 ```
 
 WebSocketサーバーは最新の設定を保持し、後から接続したiPhoneにも送ります。不正な `settings_update` は破棄され、サーバー警告としてダッシュボードのConnection Diagnosticsに表示されます。
+
+## Performance Output
+
+外部演出システム用に、受信した `touch_event` を別ポートのWebSocketへ中継します。
+
+- ポート: `8788`
+- 形式: JSON
+- 接続先例: `ws://127.0.0.1:8788`
+- 同一ネットワーク上の別アプリから接続する場合: `ws://<PCのIPアドレス>:8788`
+
+ダッシュボードの `Performance Output` パネルで以下を切り替えます。
+
+- `演出出力ON/OFF`: 外部WebSocketへの送信を有効化する
+- `確定イベントだけ送る`: `isTouching: true` かつ `confidence >= performance confidence` のイベントだけ送る
+- `performance confidence`: 演出出力に必要な信頼度
+
+演出用WebSocketへ送るJSON例:
+
+```json
+{
+  "type": "brain_touch",
+  "region": "right_temporal_lobe",
+  "regionLabel": "右側頭葉",
+  "surface": "side",
+  "surfaceLabel": "側面",
+  "confidence": 0.84,
+  "durationSec": 0.72,
+  "timestamp": 1720000000000
+}
+```
+
+TouchDesigner、p5.js、Processing、Unity、LED制御プログラムなどは、`8788` のWebSocketへクライアント接続してこのJSONを受け取ります。受信専用クライアントで問題ありません。疎通確認用に `{"type":"ping"}` を送ると `pong` が返ります。
+
+### OSC Output Design
+
+OSC出力はまだ標準実装していません。将来追加する場合は、WebSocket中継と同じ `brain_touch` イベントからOSCメッセージを生成します。
+
+想定アドレス:
+
+```text
+/brain_touch
+```
+
+想定引数:
+
+```text
+region regionLabel surface surfaceLabel confidence durationSec timestamp
+```
+
+例:
+
+```text
+/brain_touch right_temporal_lobe 右側頭葉 side 側面 0.84 0.72 1720000000000
+```
+
+OSCはTouchDesignerやMax/MSPとの相性がよい一方、Node側に追加ライブラリと送信先IP/ポート設定が必要です。展示本番で必要になった段階で、`osc` などのライブラリを使うオプション機能として追加します。
 
 ## Build
 

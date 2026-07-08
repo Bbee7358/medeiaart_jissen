@@ -41,6 +41,12 @@ export type SettingsUpdatePayload = {
   smoothingFrames: number;
 };
 
+export type PerformanceOutputSettings = {
+  enabled: boolean;
+  confirmedOnly: boolean;
+  confidenceThreshold: number;
+};
+
 export type TouchEventMessage = {
   version: "0.1.0";
   source: string;
@@ -104,6 +110,11 @@ export type ServerDiagnostics = {
   lastHttpRequestRemote: string | null;
   lastSettingsAt: number | null;
   lastSettingsRemote: string | null;
+  performanceClientCount: number;
+  performanceWebSocketUrls: string[];
+  performanceOutputEnabled: boolean;
+  lastPerformanceEventAt: number | null;
+  lastPerformanceEventRegion: string | null;
   lastWarning: string | null;
 };
 
@@ -116,6 +127,10 @@ export type ServerMessage =
   | {
       type: "settings_update";
       payload: SettingsUpdatePayload;
+    }
+  | {
+      type: "performance_output_settings";
+      payload: PerformanceOutputSettings;
     }
   | {
       type: "ping" | "pong";

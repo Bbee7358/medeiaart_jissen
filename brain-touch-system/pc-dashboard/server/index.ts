@@ -6,14 +6,18 @@ import { fileURLToPath } from "node:url";
 import { WebSocketServer, type WebSocket } from "ws";
 
 const PORT = 8787;
+const PERFORMANCE_PORT = 8788;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dashboardRoot = path.resolve(__dirname, "..");
 const projectRoot = path.resolve(dashboardRoot, "..");
 const logsDir = path.join(dashboardRoot, "logs");
 const schemaPath = path.join(projectRoot, "shared/touch-event.schema.json");
 const httpServer = http.createServer(handleHttpRequest);
+const performanceHttpServer = http.createServer(handlePerformanceHttpRequest);
 const server = new WebSocketServer({ noServer: true });
+const performanceServer = new WebSocketServer({ noServer: true });
 const clients = new Set<WebSocket>();
+const performanceClients = new Set<WebSocket>();
 const schema = JSON.parse(fs.readFileSync(schemaPath, "utf8")) as { required?: string[] };
 const requiredFields = schema.required ?? [];
 
@@ -40,6 +44,23 @@ type SettingsUpdatePayload = {
   smoothingFrames: number;
 };
 
+type PerformanceOutputSettings = {
+  enabled: boolean;
+  confirmedOnly: boolean;
+  confidenceThreshold: number;
+};
+
+type PerformanceEventMessage = {
+  type: "brain_touch";
+  region: unknown;
+  regionLabel: unknown;
+  surface: unknown;
+  surfaceLabel: unknown;
+  confidence: number;
+  durationSec: unknown;
+  timestamp: number;
+};
+
 type DailyStats = {
   date: string;
   receivedCount: number;
@@ -57,6 +78,11 @@ type ServerDiagnostics = {
   lastHttpRequestRemote: string | null;
   lastSettingsAt: number | null;
   lastSettingsRemote: string | null;
+  performanceClientCount: number;
+  performanceWebSocketUrls: string[];
+  performanceOutputEnabled: boolean;
+  lastPerformanceEventAt: number | null;
+  lastPerformanceEventRegion: string | null;
   lastWarning: string | null;
 };
 
@@ -77,10 +103,20 @@ let diagnostics: ServerDiagnostics = {
   lastHttpRequestRemote: null,
   lastSettingsAt: null,
   lastSettingsRemote: null,
+  performanceClientCount: 0,
+  performanceWebSocketUrls: getLocalIPv4Addresses().map((address) => `ws://${address}:${PERFORMANCE_PORT}`),
+  performanceOutputEnabled: false,
+  lastPerformanceEventAt: null,
+  lastPerformanceEventRegion: null,
   lastWarning: null
 };
 
 let latestSettings: SettingsUpdatePayload | null = null;
+let performanceOutputSettings: PerformanceOutputSettings = {
+  enabled: false,
+  confirmedOnly: true,
+  confidenceThreshold: 0.75
+};
 
 fs.mkdirSync(logsDir, { recursive: true });
 loadTodayStats();
@@ -108,6 +144,8 @@ function refreshNetworkDiagnostics() {
   diagnostics.localAddresses = localAddresses;
   diagnostics.healthUrls = localAddresses.map((address) => `http://${address}:${PORT}/health`);
   diagnostics.websocketUrls = localAddresses.map((address) => `ws://${address}:${PORT}`);
+  diagnostics.performanceWebSocketUrls = localAddresses.map((address) => `ws://${address}:${PERFORMANCE_PORT}`);
+  diagnostics.performanceOutputEnabled = performanceOutputSettings.enabled;
 }
 
 function resetStatsIfDateChanged() {
@@ -162,6 +200,15 @@ function sendJson(socket: WebSocket, message: unknown) {
   }
 }
 
+function sendPerformanceJson(message: unknown) {
+  const json = JSON.stringify(message);
+  for (const client of performanceClients) {
+    if (client.readyState === client.OPEN) {
+      client.send(json);
+    }
+  }
+}
+
 function broadcastStats() {
   const message = JSON.stringify({
     type: "dailyStats",
@@ -178,6 +225,7 @@ function broadcastStats() {
 function broadcastDiagnostics() {
   refreshNetworkDiagnostics();
   diagnostics.clientCount = clients.size;
+  diagnostics.performanceClientCount = performanceClients.size;
   const message = JSON.stringify({
     type: "serverDiagnostics",
     payload: diagnostics
@@ -247,6 +295,50 @@ function validateSettingsPayload(payload: unknown): SettingsUpdatePayload | null
   return settings;
 }
 
+function validatePerformanceOutputSettings(payload: unknown): PerformanceOutputSettings | null {
+  if (!isRecord(payload)) return null;
+
+  const settings = {
+    enabled: Boolean(payload.enabled),
+    confirmedOnly: payload.confirmedOnly === undefined ? true : Boolean(payload.confirmedOnly),
+    confidenceThreshold: Number(payload.confidenceThreshold)
+  };
+
+  if (!Number.isFinite(settings.confidenceThreshold)) return null;
+  if (settings.confidenceThreshold < 0 || settings.confidenceThreshold > 1) return null;
+
+  return settings;
+}
+
+function shouldSendPerformanceEvent(event: TouchEventMessage) {
+  if (!performanceOutputSettings.enabled) return false;
+  if (!performanceOutputSettings.confirmedOnly) return true;
+  return event.isTouching === true
+    && typeof event.confidence === "number"
+    && event.confidence >= performanceOutputSettings.confidenceThreshold;
+}
+
+function toPerformanceEvent(event: TouchEventMessage): PerformanceEventMessage {
+  return {
+    type: "brain_touch",
+    region: event.region,
+    regionLabel: event.regionLabel,
+    surface: event.surface,
+    surfaceLabel: event.surfaceLabel,
+    confidence: event.confidence,
+    durationSec: event.durationSec,
+    timestamp: event.timestamp
+  };
+}
+
+function maybeBroadcastPerformanceEvent(event: TouchEventMessage) {
+  if (!shouldSendPerformanceEvent(event)) return;
+
+  sendPerformanceJson(toPerformanceEvent(event));
+  diagnostics.lastPerformanceEventAt = Date.now();
+  diagnostics.lastPerformanceEventRegion = typeof event.region === "string" ? event.region : null;
+}
+
 function appendEvent(event: TouchEventMessage) {
   resetStatsIfDateChanged();
 
@@ -268,9 +360,11 @@ function buildHealthPayload() {
     stats,
     diagnostics: {
       ...diagnostics,
-      clientCount: clients.size
+      clientCount: clients.size,
+      performanceClientCount: performanceClients.size
     },
-    latestSettings
+    latestSettings,
+    performanceOutputSettings
   };
 }
 
@@ -311,6 +405,24 @@ function handleHttpRequest(request: http.IncomingMessage, response: http.ServerR
   });
   response.end(body);
   broadcastDiagnostics();
+}
+
+function handlePerformanceHttpRequest(request: http.IncomingMessage, response: http.ServerResponse) {
+  const body = [
+    "Brain Touch performance WebSocket relay is running.",
+    "",
+    `WebSocket port: ${PERFORMANCE_PORT}`,
+    "Connect TouchDesigner / p5.js / Processing / Unity clients here.",
+    "",
+    ...getLocalIPv4Addresses().map((address) => `- ws://${address}:${PERFORMANCE_PORT}`)
+  ].join("\n");
+
+  response.writeHead(200, {
+    "Access-Control-Allow-Origin": "*",
+    "Cache-Control": "no-store",
+    "Content-Type": "text/plain; charset=utf-8"
+  });
+  response.end(body);
 }
 
 server.on("connection", (socket, request) => {
@@ -362,6 +474,20 @@ server.on("connection", (socket, request) => {
         return;
       }
 
+      if (parsed.type === "performance_output_settings") {
+        const settings = validatePerformanceOutputSettings(parsed.payload);
+        if (!settings) {
+          warnAndBroadcast(`[ws] ignored invalid performance_output_settings from ${remote}`);
+          return;
+        }
+
+        performanceOutputSettings = settings;
+        diagnostics.performanceOutputEnabled = settings.enabled;
+        diagnostics.lastWarning = null;
+        broadcastDiagnostics();
+        return;
+      }
+
       if (parsed.type === "touch_event") {
         parsed = parsed.payload;
       } else {
@@ -382,6 +508,7 @@ server.on("connection", (socket, request) => {
     diagnostics.lastEventAt = Date.now();
     diagnostics.lastEventRemote = remote;
     diagnostics.lastWarning = null;
+    maybeBroadcastPerformanceEvent(event);
     broadcast(JSON.stringify({ type: "touch_event", payload: event }), socket);
     broadcastStats();
     broadcastDiagnostics();
@@ -398,12 +525,61 @@ server.on("connection", (socket, request) => {
   });
 });
 
+performanceServer.on("connection", (socket, request) => {
+  performanceClients.add(socket);
+  const remote = `${request.socket.remoteAddress ?? "unknown"}:${request.socket.remotePort ?? "unknown"}`;
+  console.log(`[performance-ws] connected ${remote}. clients=${performanceClients.size}`);
+  sendJson(socket, {
+    type: "performance_status",
+    enabled: performanceOutputSettings.enabled,
+    confirmedOnly: performanceOutputSettings.confirmedOnly,
+    confidenceThreshold: performanceOutputSettings.confidenceThreshold
+  });
+  broadcastDiagnostics();
+
+  socket.on("message", (data) => {
+    const message = data.toString();
+    if (message === "ping") {
+      sendJson(socket, { type: "pong", timestamp: Date.now() });
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(message) as unknown;
+      if (isTypedMessage(parsed) && parsed.type === "ping") {
+        sendJson(socket, { type: "pong", timestamp: Date.now() });
+      }
+    } catch {
+      // Performance clients may be receive-only. Ignore non-JSON messages.
+    }
+  });
+
+  socket.on("close", (code, reason) => {
+    performanceClients.delete(socket);
+    console.log(`[performance-ws] disconnected ${remote}. code=${code} reason=${reason.toString()} clients=${performanceClients.size}`);
+    broadcastDiagnostics();
+  });
+
+  socket.on("error", (error) => {
+    console.error(`[performance-ws] error from ${remote}`, error);
+  });
+});
+
 httpServer.on("upgrade", (request, socket, head) => {
   const remote = `${request.socket.remoteAddress ?? "unknown"}:${request.socket.remotePort ?? "unknown"}`;
   console.log(`[ws] upgrade request from ${remote} ${request.url ?? "/"}`);
 
   server.handleUpgrade(request, socket, head, (webSocket) => {
     server.emit("connection", webSocket, request);
+  });
+});
+
+performanceHttpServer.on("upgrade", (request, socket, head) => {
+  const remote = `${request.socket.remoteAddress ?? "unknown"}:${request.socket.remotePort ?? "unknown"}`;
+  console.log(`[performance-ws] upgrade request from ${remote} ${request.url ?? "/"}`);
+
+  performanceServer.handleUpgrade(request, socket, head, (webSocket) => {
+    performanceServer.emit("connection", webSocket, request);
   });
 });
 
@@ -415,9 +591,22 @@ httpServer.on("listening", () => {
   }
 });
 
+performanceHttpServer.on("listening", () => {
+  console.log(`[performance-ws] relay listening on ws://0.0.0.0:${PERFORMANCE_PORT}`);
+  for (const address of getLocalIPv4Addresses()) {
+    console.log(`[performance-ws] external clients can connect to ws://${address}:${PERFORMANCE_PORT}`);
+  }
+});
+
 httpServer.on("error", (error) => {
   console.error("[ws] server error", error);
   process.exitCode = 1;
 });
 
+performanceHttpServer.on("error", (error) => {
+  console.error("[performance-ws] server error", error);
+  process.exitCode = 1;
+});
+
 httpServer.listen(PORT, "0.0.0.0");
+performanceHttpServer.listen(PERFORMANCE_PORT, "0.0.0.0");

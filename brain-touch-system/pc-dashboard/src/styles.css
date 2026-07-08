@@ -160,6 +160,11 @@ h2 {
   gap: 14px;
 }
 
+.performance-panel {
+  display: grid;
+  gap: 14px;
+}
+
 .condition-pill {
   display: inline-flex;
   align-items: center;
@@ -190,10 +195,38 @@ h2 {
   gap: 18px;
 }
 
+.performance-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(280px, 1.15fr);
+  gap: 18px;
+}
+
 .threshold-controls,
-.threshold-checks {
+.threshold-checks,
+.toggle-stack {
   display: grid;
   gap: 12px;
+}
+
+.toggle-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  min-height: 44px;
+  padding: 10px 0;
+  border-bottom: 1px solid #2a3035;
+}
+
+.toggle-row span {
+  color: #aeb8c2;
+  font-size: 13px;
+}
+
+.toggle-row input {
+  width: 22px;
+  height: 22px;
+  accent-color: #4fc17b;
 }
 
 .threshold-control {
@@ -536,7 +569,8 @@ pre {
   .grid,
   .visual-grid,
   .summary-grid,
-  .threshold-layout {
+  .threshold-layout,
+  .performance-layout {
     grid-template-columns: 1fr;
   }
 
