@@ -26,6 +26,9 @@ final class ARSessionModel: NSObject, ObservableObject {
     @Published var brainModel: BrainEllipsoidModel
     @Published var brainModelCenterText: String
     @Published var lastSettingsUpdateText = "-"
+    @Published var depthCalibrationStatusText = "baseline needed"
+    @Published var depthCalibrationSampleText = "-"
+    @Published var depthCalibrationEstimateText = "-"
 
     private var lastFrameTimestamp: TimeInterval?
     private var lastHandPoseTimestamp: TimeInterval = 0
@@ -33,6 +36,8 @@ final class ARSessionModel: NSObject, ObservableObject {
     private let handPoseInterval: TimeInterval = 0.15
     private var indexTip3DSmoother = Point3DSmoother(maxSampleCount: 5)
     private let touchDetector: TouchDetector
+    private var depthCalibrationBaseline: DepthCalibrationBaseline?
+    private var pendingDepthCalibrationAction: DepthCalibrationAction?
 
     override init() {
         let loadedCalibration = BrainCalibrationStore.load()
@@ -61,6 +66,21 @@ final class ARSessionModel: NSObject, ObservableObject {
 
     func resetCalibration() {
         applyCalibration(BrainCalibrationStore.reset(), save: false)
+    }
+
+    func captureEmptyDepthBaseline() {
+        pendingDepthCalibrationAction = .captureEmptyBaseline
+        depthCalibrationStatusText = "capturing empty baseline..."
+    }
+
+    func calibrateBrainFromDepthDifference() {
+        guard depthCalibrationBaseline != nil else {
+            depthCalibrationStatusText = "capture empty baseline first"
+            return
+        }
+
+        pendingDepthCalibrationAction = .estimateBrainFromBaseline
+        depthCalibrationStatusText = "estimating brain from depth..."
     }
 
     func applyRemoteSettings(_ settings: RemoteSettingsUpdatePayload) {
@@ -111,6 +131,7 @@ extension ARSessionModel: ARSessionDelegate {
 
         Task { @MainActor in
             self.updateFrameMetrics(timestamp: timestamp, hasDepth: hasDepth)
+            self.processDepthCalibrationIfNeeded(depthData: depthData, camera: camera)
             self.detectHandPoseIfNeeded(
                 pixelBuffer: pixelBuffer,
                 depthData: depthData,
@@ -174,6 +195,70 @@ private extension ARSessionModel {
         timestampText = String(format: "%.3f", timestamp)
         isDepthAvailable = hasDepth
         depthStatus = hasDepth ? "available" : "unavailable"
+    }
+
+    func processDepthCalibrationIfNeeded(depthData: ARDepthData?, camera: ARCamera) {
+        guard let action = pendingDepthCalibrationAction else { return }
+        pendingDepthCalibrationAction = nil
+
+        do {
+            switch action {
+            case .captureEmptyBaseline:
+                let baseline = try DepthBrainCalibrator.makeBaseline(
+                    depthData: depthData,
+                    camera: camera,
+                    workingRadiusMeters: 0.50
+                )
+                depthCalibrationBaseline = baseline
+                depthCalibrationStatusText = "empty baseline captured"
+                depthCalibrationSampleText = String(
+                    format: "baseline %d px, %.2fm, r %.0fpx",
+                    baseline.sampleCount,
+                    baseline.medianDepthMeters,
+                    baseline.workingRadiusPixels
+                )
+                depthCalibrationEstimateText = "-"
+
+            case .estimateBrainFromBaseline:
+                guard let baseline = depthCalibrationBaseline else {
+                    depthCalibrationStatusText = "capture empty baseline first"
+                    return
+                }
+
+                let estimate = try DepthBrainCalibrator.estimateBrain(
+                    depthData: depthData,
+                    camera: camera,
+                    baseline: baseline
+                )
+                var next = calibration
+                next.centerX = estimate.centerWorld.x
+                next.centerY = estimate.centerWorld.y
+                next.centerZ = estimate.centerWorld.z
+                next.widthMeters = estimate.widthMeters
+                next.depthMeters = estimate.depthMeters
+                next.heightMeters = estimate.heightMeters
+                applyCalibration(next, save: true)
+
+                depthCalibrationStatusText = "brain calibrated from depth"
+                depthCalibrationSampleText = String(
+                    format: "object %d px, top %.2fm, base %.2fm",
+                    estimate.sampleCount,
+                    estimate.topSurfaceDepthMeters,
+                    estimate.baselineDepthMeters
+                )
+                depthCalibrationEstimateText = String(
+                    format: "w %.2fm, d %.2fm, h %.2fm, center %@",
+                    estimate.widthMeters,
+                    estimate.depthMeters,
+                    estimate.heightMeters,
+                    Self.formatCenter(estimate.centerWorld)
+                )
+            }
+        } catch let error as DepthBrainCalibrationError {
+            depthCalibrationStatusText = "calibration error: \(error.description)"
+        } catch {
+            depthCalibrationStatusText = "calibration error: \(error.localizedDescription)"
+        }
     }
 
     func detectHandPoseIfNeeded(
@@ -400,6 +485,11 @@ private struct RecognizedHandJoint {
     let displayPoint: HandJoint2D
     let visionPoint: CGPoint
     let confidence: Float
+}
+
+private enum DepthCalibrationAction {
+    case captureEmptyBaseline
+    case estimateBrainFromBaseline
 }
 
 private extension DateFormatter {

@@ -269,16 +269,28 @@ AR画面上では、仮楕円体を半透明の青緑色で表示します。上
 
 変更した値は `UserDefaults` に保存され、アプリ再起動後も保持されます。`Reset calibration` を押すと初期値に戻ります。現在の設定値はWebSocketの `debug.calibration` にも入ります。
 
-最初のキャリブレーション手順:
+### LiDAR深度差による粗い自動キャリブレーション
+
+固定したiPhoneの下に何もない状態を先に記録し、そのあと置いた脳模型だけをLiDAR深度差で抽出して、仮楕円体の中心・幅・奥行き・高さへ反映できます。
+
+実機での手順:
 
 1. iPhoneを展示上部に固定する
-2. 脳模型を真下に置く
-3. アプリを起動する
-4. 手で脳の上面中央に触れる
-5. `Set Center Here` を押して楕円体中心の初期位置を合わせる
-6. 表示される `touch distance` と `touch region` を見ながら中心・サイズを調整する
-7. 左側面・右側面・前方・後方も触って確認する
-8. PCダッシュボードで `regionLabel`, `distanceCm`, `isTouching`, `confidence` が安定して表示されるか確認する
+2. カメラ中心から半径50cm程度の範囲に脳模型・手・ケーブルなどを置かない
+3. アプリを起動し、`depth` が `available` になるまで待つ
+4. `Capture Empty Baseline` を押す
+5. `depth calibration` が `empty baseline captured` になることを確認する
+6. 決めておいた向きで脳模型を置く
+7. 手を画角に入れずに `Calibrate Brain From Depth` を押す
+8. `depth calibration` が `brain calibrated from depth` になり、`depth calib estimate` に幅・奥行き・高さ・中心が表示されることを確認する
+9. AR画面上の半透明楕円体が実物の脳模型に近い位置で重なるか見る
+10. 必要に応じて `brain center x/y/z`, `brain width/depth/height` を手動で微調整する
+11. 左側面・右側面・前方・後方を指で触って確認する
+12. PCダッシュボードで `regionLabel`, `distanceCm`, `isTouching`, `confidence` が安定して表示されるか確認する
+
+この方式は、空状態との差分で「手前に出てきた物体」を脳模型候補として扱います。キャリブレーション時に手や他の物が画角に入ると推定がずれます。iPhoneを動かした場合は、必ず `Capture Empty Baseline` からやり直してください。詳細は `../docs/depth-based-calibration.md` を参照してください。
+
+### 手動微調整
 
 判定ロジックは `TouchDetector` に分けています。`indexTip3D` と楕円体表面の距離を見て、以下のように判定します。
 

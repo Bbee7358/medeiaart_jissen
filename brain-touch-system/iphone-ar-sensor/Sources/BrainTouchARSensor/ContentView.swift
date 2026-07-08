@@ -54,6 +54,24 @@ struct ContentView: View {
                         .buttonStyle(.bordered)
                     }
 
+                    HStack(spacing: 10) {
+                        Button("Capture Empty Baseline") {
+                            sessionModel.captureEmptyDepthBaseline()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!sessionModel.isDepthAvailable)
+
+                        Button("Calibrate Brain From Depth") {
+                            sessionModel.calibrateBrainFromDepthDifference()
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(!sessionModel.isDepthAvailable)
+                    }
+
+                    DebugRow(label: "depth calibration", value: sessionModel.depthCalibrationStatusText)
+                    DebugRow(label: "depth calib samples", value: sessionModel.depthCalibrationSampleText)
+                    DebugRow(label: "depth calib estimate", value: sessionModel.depthCalibrationEstimateText)
+
                     CalibrationStepper(
                         label: "brain center x",
                         value: calibrationBinding(\.centerX),
