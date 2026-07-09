@@ -9,12 +9,6 @@ struct ContentView: View {
             ARViewContainer(sessionModel: sessionModel)
                 .ignoresSafeArea()
 
-            BrainDepthDetectionOverlay(snapshot: sessionModel.brainDetectionOverlay)
-                .ignoresSafeArea()
-
-            FingerTipOverlay(point: sessionModel.handPose.fingerTips.indexTip)
-                .ignoresSafeArea()
-
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Brain Touch AR Sensor")
@@ -240,6 +234,16 @@ struct ContentView: View {
                 .foregroundStyle(.white)
                 .padding()
             }
+
+            BrainDepthDetectionOverlay(snapshot: sessionModel.brainDetectionOverlay)
+                .ignoresSafeArea()
+
+            FingerTipOverlay(point: sessionModel.handPose.fingerTips.indexTip)
+                .ignoresSafeArea()
+
+            DepthDiagnosticBadge(snapshot: sessionModel.brainDetectionOverlay)
+                .padding(.top, 52)
+                .padding(.horizontal, 10)
         }
         .onChange(of: sessionModel.handPose) { handPose in
             webSocketClient.updateHandPose(handPose)
@@ -292,28 +296,28 @@ private struct BrainDepthDetectionOverlay: View {
 
                 drawPoints(
                     snapshot.rawDepthPoints,
-                    color: .white.opacity(0.10),
-                    pointSize: max(0.8, min(size.width, size.height) * 0.0024),
+                    color: .white.opacity(0.20),
+                    pointSize: max(1.4, min(size.width, size.height) * 0.0038),
                     context: context,
                     size: size
                 )
                 drawHeatPoints(
                     snapshot.raisedHeatPoints,
-                    pointSize: max(1.8, min(size.width, size.height) * 0.0048),
+                    pointSize: max(3.0, min(size.width, size.height) * 0.008),
                     context: context,
                     size: size
                 )
                 drawPoints(
                     snapshot.weakPoints,
-                    color: .yellow.opacity(0.34),
-                    pointSize: max(1.6, min(size.width, size.height) * 0.0045),
+                    color: .yellow.opacity(0.80),
+                    pointSize: max(2.8, min(size.width, size.height) * 0.0075),
                     context: context,
                     size: size
                 )
                 drawPoints(
                     snapshot.points,
-                    color: .cyan.opacity(0.76),
-                    pointSize: max(2.0, min(size.width, size.height) * 0.006),
+                    color: .cyan.opacity(0.96),
+                    pointSize: max(3.2, min(size.width, size.height) * 0.0086),
                     context: context,
                     size: size
                 )
@@ -337,7 +341,7 @@ private struct BrainDepthDetectionOverlay: View {
                 context.stroke(
                     Path(roundedRect: bounds, cornerRadius: 4),
                     with: .color(.yellow),
-                    lineWidth: 3
+                    lineWidth: 6
                 )
 
                 let centroid = CGPoint(
@@ -349,7 +353,7 @@ private struct BrainDepthDetectionOverlay: View {
                 cross.addLine(to: CGPoint(x: centroid.x + 12, y: centroid.y))
                 cross.move(to: CGPoint(x: centroid.x, y: centroid.y - 12))
                 cross.addLine(to: CGPoint(x: centroid.x, y: centroid.y + 12))
-                context.stroke(cross, with: .color(.red), lineWidth: 3)
+                context.stroke(cross, with: .color(.red), lineWidth: 6)
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
         }
@@ -389,10 +393,10 @@ private struct BrainDepthDetectionOverlay: View {
         for point in points {
             let normalized = min(1.0, max(0.0, point.heightMeters / 0.10))
             let color = Color(
-                red: 0.15 + normalized * 0.85,
-                green: 0.25 + normalized * 0.25,
-                blue: 1.0 - normalized * 0.88
-            ).opacity(0.48)
+                red: 0.25 + normalized * 0.75,
+                green: 0.05 + normalized * 0.35,
+                blue: 1.0 - normalized * 0.95
+            ).opacity(0.88)
             let center = CGPoint(
                 x: point.point.x * size.width,
                 y: point.point.y * size.height
@@ -405,6 +409,42 @@ private struct BrainDepthDetectionOverlay: View {
             )
             context.fill(Path(ellipseIn: rect), with: .color(color))
         }
+    }
+}
+
+private struct DepthDiagnosticBadge: View {
+    let snapshot: BrainDepthDetectionOverlaySnapshot
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("DEPTH DEBUG v3")
+                .font(.caption.weight(.black))
+                .foregroundStyle(.white)
+            Text("white raw  purple/red raised  yellow weak  cyan adopted")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.white)
+            Text(
+                String(
+                    format: "raw %d  raised %d  weak %d  adopted %d  max %.1fcm",
+                    snapshot.rawDepthCount,
+                    snapshot.lowRaisedCount,
+                    snapshot.weakCandidateCount,
+                    snapshot.candidateCount,
+                    snapshot.maxRaisedHeightMeters * 100
+                )
+            )
+            .font(.caption2.monospacedDigit().weight(.bold))
+            .foregroundStyle(.white)
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .background(.black.opacity(0.82), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(.white.opacity(0.45), lineWidth: 1)
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .allowsHitTesting(false)
     }
 }
 
