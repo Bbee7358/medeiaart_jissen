@@ -367,7 +367,9 @@ private extension ARSessionModel {
         let indexDIP = detection.landmark(.indexDIP)
         let indexPIP = detection.landmark(.indexPIP)
         let middleTip = detection.landmark(.middleTip)
+        let middleDIP = detection.landmark(.middleDIP)
         let ringTip = detection.landmark(.ringTip)
+        let ringDIP = detection.landmark(.ringDIP)
         let littleTip = detection.landmark(.littleTip)
 
         let confidence = detection.confidence
@@ -384,17 +386,28 @@ private extension ARSessionModel {
             depthSample,
             camera: camera
         )
-        let indexDIPDepthSample = DepthSampler.sampleHandJointDepth(
-            visionPoint: indexDIP?.pseudoVisionPointForDepthSampling,
-            jointName: "index_dip",
+        let indexContactDepthSample = DepthSampler.sampleFingerContactDepth(
+            tipVisionPoint: indexTip?.pseudoVisionPointForDepthSampling,
+            dipVisionPoint: indexDIP?.pseudoVisionPointForDepthSampling,
+            fingerName: "index",
             depthData: depthData,
             capturedImage: capturedImage,
             depthSource: depthSource,
             kernelSize: 7
         )
-        let indexPIPDepthSample = DepthSampler.sampleHandJointDepth(
-            visionPoint: indexPIP?.pseudoVisionPointForDepthSampling,
-            jointName: "index_pip",
+        let middleContactDepthSample = DepthSampler.sampleFingerContactDepth(
+            tipVisionPoint: middleTip?.pseudoVisionPointForDepthSampling,
+            dipVisionPoint: middleDIP?.pseudoVisionPointForDepthSampling,
+            fingerName: "middle",
+            depthData: depthData,
+            capturedImage: capturedImage,
+            depthSource: depthSource,
+            kernelSize: 7
+        )
+        let ringContactDepthSample = DepthSampler.sampleFingerContactDepth(
+            tipVisionPoint: ringTip?.pseudoVisionPointForDepthSampling,
+            dipVisionPoint: ringDIP?.pseudoVisionPointForDepthSampling,
+            fingerName: "ring",
             depthData: depthData,
             capturedImage: capturedImage,
             depthSource: depthSource,
@@ -403,8 +416,9 @@ private extension ARSessionModel {
         let fingerSurfaceHit = nearestFingerSurfaceHit(
             candidates: [
                 rawIndexTip3D,
-                PointUnprojector.unprojectDepthSample(indexDIPDepthSample, camera: camera),
-                PointUnprojector.unprojectDepthSample(indexPIPDepthSample, camera: camera)
+                PointUnprojector.unprojectDepthSample(indexContactDepthSample, camera: camera),
+                PointUnprojector.unprojectDepthSample(middleContactDepthSample, camera: camera),
+                PointUnprojector.unprojectDepthSample(ringContactDepthSample, camera: camera)
             ]
         )
         let smoothedIndexTip3D = indexTip3DSmoother.append(rawIndexTip3D)

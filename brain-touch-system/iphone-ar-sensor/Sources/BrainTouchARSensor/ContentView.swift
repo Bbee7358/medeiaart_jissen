@@ -30,7 +30,7 @@ struct ContentView: View {
                     DebugRow(label: "depth sample", value: sessionModel.depthSampleText)
                     DebugRow(label: "depth confidence", value: sessionModel.depthConfidenceText)
                     DebugRow(label: "confidence", value: sessionModel.handConfidenceText)
-                    DebugRow(label: "touch mode", value: "stl mesh + index joints")
+                    DebugRow(label: "touch mode", value: "stl mesh + index/middle/ring tips")
                     DebugRow(label: "touch status", value: sessionModel.touchStatusText)
                     DebugRow(label: "touch region", value: sessionModel.touchRegionText)
                     DebugRow(label: "touch distance", value: sessionModel.touchDistanceText)

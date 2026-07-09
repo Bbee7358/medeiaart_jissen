@@ -69,6 +69,37 @@ enum DepthSampler {
         )
     }
 
+    static func sampleFingerContactDepth(
+        tipVisionPoint: CGPoint?,
+        dipVisionPoint: CGPoint?,
+        fingerName: String,
+        depthData: ARDepthData?,
+        capturedImage: CVPixelBuffer,
+        depthSource: String,
+        kernelSize: Int = 7
+    ) -> DepthSampleResult? {
+        guard let tipVisionPoint, let depthData else { return nil }
+
+        let sampleVisionPoint: CGPoint
+        let strategy: String
+        if let dipVisionPoint {
+            sampleVisionPoint = lerp(tipVisionPoint, dipVisionPoint, t: 0.20)
+            strategy = "\(fingerName)_tip_to_dip_20percent_confidence_near_percentile_20"
+        } else {
+            sampleVisionPoint = tipVisionPoint
+            strategy = "\(fingerName)_tip_only_confidence_near_percentile_20"
+        }
+
+        return sampleDepth(
+            visionPoint: sampleVisionPoint,
+            depthData: depthData,
+            capturedImage: capturedImage,
+            depthSource: depthSource,
+            kernelSize: kernelSize,
+            strategy: strategy
+        )
+    }
+
     private static func sampleDepth(
         visionPoint: CGPoint,
         depthData: ARDepthData,

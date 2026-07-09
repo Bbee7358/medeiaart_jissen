@@ -167,7 +167,11 @@ struct SampledBrainSTLSurfaceModel: BrainSurfaceModel {
             ? simd_normalize(centerDelta)
             : SIMD3<Float>(0, 1, 0)
         let surface = surfaceClassification(normal: normalVector)
-        let block = blockClassification(rawVertex: bestRawVertex)
+        let block = blockClassification(
+            rawVertex: bestRawVertex,
+            surface: surface,
+            normal: normalVector
+        )
         let distanceMeters = Double(sqrt(bestDistanceSquared))
         let threshold = max(calibration.touchThresholdMeters, 0.001)
         let confidence = max(0, 1.0 - min(distanceMeters / threshold, 1.0))
@@ -209,15 +213,23 @@ struct SampledBrainSTLSurfaceModel: BrainSurfaceModel {
         return normal.z < 0 ? ("front", "前方") : ("back", "後方")
     }
 
-    private func blockClassification(rawVertex: SIMD3<Float>) -> (id: String, label: String) {
+    private func blockClassification(
+        rawVertex: SIMD3<Float>,
+        surface: (id: String, label: String),
+        normal: SIMD3<Float>
+    ) -> (id: String, label: String) {
         let box = metadata.boundingBox
         let xRatio = normalized(rawVertex.x, min: box.minX, max: box.maxX)
         let yRatio = normalized(rawVertex.y, min: box.minY, max: box.maxY)
         let zRatio = normalized(rawVertex.z, min: box.minZ, max: box.maxZ)
+        let distanceToOuterEdge = min(xRatio, 1 - xRatio, yRatio, 1 - yRatio)
+        let isOuterBand = distanceToOuterEdge <= 0.18
+        let isClearlyTopFacing = surface.id == "top" && normal.y > 0.58
+        let isUpperCentralCap = isClearlyTopFacing && !isOuterBand && zRatio >= 0.45
 
         let layerId: String
         let layerLabel: String
-        if zRatio >= 0.52 {
+        if isUpperCentralCap {
             layerId = "top"
             layerLabel = "上段"
         } else {
