@@ -52,16 +52,22 @@ final class TouchDetector {
         resetRegion()
     }
 
-    func update(indexTip3D: HandJoint3D?, hasDepth: Bool, timestamp: TimeInterval) -> TouchDetectionResult {
-        guard hasDepth, let point = indexTip3D else {
+    func update(
+        indexTip3D: HandJoint3D?,
+        hasDepth: Bool,
+        timestamp: TimeInterval,
+        meshHit: NearestSurfaceHit? = nil
+    ) -> TouchDetectionResult {
+        let motionPoint = indexTip3D ?? meshHit?.point
+        guard hasDepth, let point = motionPoint else {
             resetRegion()
             updateMotion(point: nil, timestamp: timestamp)
             return .empty
         }
 
         let speed = updateMotion(point: point, timestamp: timestamp)
-        let surface = nearestSurface(to: point)
-        let absDistance = abs(surface.signedDistanceMeters)
+        let surface = meshHit.map(SurfaceEstimate.init(meshHit:)) ?? nearestSurface(to: point)
+        let absDistance = surface.distanceMeters
         let isCandidate = absDistance <= calibration.touchThresholdMeters
         let isStrongCandidate = absDistance <= calibration.strongThresholdMeters
 
@@ -122,7 +128,7 @@ final class TouchDetector {
 
         if normalizedLength < 0.35 {
             return SurfaceEstimate(
-                signedDistanceMeters: signedDistance,
+                distanceMeters: abs(signedDistance),
                 region: "center",
                 regionLabel: "中央",
                 surface: "center",
@@ -132,7 +138,7 @@ final class TouchDetector {
 
         if ny >= nx && ny >= nz && surfaceLocal.y >= 0 {
             return SurfaceEstimate(
-                signedDistanceMeters: signedDistance,
+                distanceMeters: abs(signedDistance),
                 region: "top",
                 regionLabel: "上面",
                 surface: "top",
@@ -143,7 +149,7 @@ final class TouchDetector {
         if nx >= nz {
             if surfaceLocal.x < 0 {
                 return SurfaceEstimate(
-                    signedDistanceMeters: signedDistance,
+                    distanceMeters: abs(signedDistance),
                     region: "left_side",
                     regionLabel: "左側面",
                     surface: "left",
@@ -152,7 +158,7 @@ final class TouchDetector {
             }
 
             return SurfaceEstimate(
-                signedDistanceMeters: signedDistance,
+                distanceMeters: abs(signedDistance),
                 region: "right_side",
                 regionLabel: "右側面",
                 surface: "right",
@@ -162,7 +168,7 @@ final class TouchDetector {
 
         if surfaceLocal.z < 0 {
             return SurfaceEstimate(
-                signedDistanceMeters: signedDistance,
+                distanceMeters: abs(signedDistance),
                 region: "front",
                 regionLabel: "前方",
                 surface: "front",
@@ -171,7 +177,7 @@ final class TouchDetector {
         }
 
         return SurfaceEstimate(
-            signedDistanceMeters: signedDistance,
+            distanceMeters: abs(signedDistance),
             region: "back",
             regionLabel: "後方",
             surface: "back",
@@ -250,11 +256,53 @@ final class TouchDetector {
 }
 
 private struct SurfaceEstimate {
-    let signedDistanceMeters: Double
+    let distanceMeters: Double
     let region: String
     let regionLabel: String
     let surface: String
     let surfaceLabel: String
+
+    init(
+        distanceMeters: Double,
+        region: String,
+        regionLabel: String,
+        surface: String,
+        surfaceLabel: String
+    ) {
+        self.distanceMeters = distanceMeters
+        self.region = region
+        self.regionLabel = regionLabel
+        self.surface = surface
+        self.surfaceLabel = surfaceLabel
+    }
+
+    init(meshHit: NearestSurfaceHit) {
+        let region = Self.region(forSurface: meshHit.surface)
+        self.init(
+            distanceMeters: meshHit.distanceMeters,
+            region: region.id,
+            regionLabel: region.label,
+            surface: meshHit.surface,
+            surfaceLabel: meshHit.surfaceLabel
+        )
+    }
+
+    private static func region(forSurface surface: String) -> (id: String, label: String) {
+        switch surface {
+        case "top":
+            return ("top", "上面")
+        case "left":
+            return ("left_side", "左側面")
+        case "right":
+            return ("right_side", "右側面")
+        case "front":
+            return ("front", "前方")
+        case "back":
+            return ("back", "後方")
+        default:
+            return ("unknown", "不明")
+        }
+    }
 }
 
 extension TouchDetectionResult {

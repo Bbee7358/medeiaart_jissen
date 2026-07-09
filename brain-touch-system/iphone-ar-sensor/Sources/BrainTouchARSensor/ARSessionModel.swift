@@ -365,6 +365,7 @@ private extension ARSessionModel {
         let thumbTip = detection.landmark(.thumbTip)
         let indexTip = detection.landmark(.indexTip)
         let indexDIP = detection.landmark(.indexDIP)
+        let indexPIP = detection.landmark(.indexPIP)
         let middleTip = detection.landmark(.middleTip)
         let ringTip = detection.landmark(.ringTip)
         let littleTip = detection.landmark(.littleTip)
@@ -383,12 +384,36 @@ private extension ARSessionModel {
             depthSample,
             camera: camera
         )
+        let indexDIPDepthSample = DepthSampler.sampleHandJointDepth(
+            visionPoint: indexDIP?.pseudoVisionPointForDepthSampling,
+            jointName: "index_dip",
+            depthData: depthData,
+            capturedImage: capturedImage,
+            depthSource: depthSource,
+            kernelSize: 7
+        )
+        let indexPIPDepthSample = DepthSampler.sampleHandJointDepth(
+            visionPoint: indexPIP?.pseudoVisionPointForDepthSampling,
+            jointName: "index_pip",
+            depthData: depthData,
+            capturedImage: capturedImage,
+            depthSource: depthSource,
+            kernelSize: 7
+        )
+        let fingerSurfaceHit = nearestFingerSurfaceHit(
+            candidates: [
+                rawIndexTip3D,
+                PointUnprojector.unprojectDepthSample(indexDIPDepthSample, camera: camera),
+                PointUnprojector.unprojectDepthSample(indexPIPDepthSample, camera: camera)
+            ]
+        )
         let smoothedIndexTip3D = indexTip3DSmoother.append(rawIndexTip3D)
-        updateSTLNearestDebug(indexTip3D: smoothedIndexTip3D)
+        updateSTLNearestDebug(hit: fingerSurfaceHit, fallbackPoint: smoothedIndexTip3D)
         let touch = touchDetector.update(
             indexTip3D: smoothedIndexTip3D,
-            hasDepth: depthSample != nil,
-            timestamp: timestamp
+            hasDepth: depthSample != nil || fingerSurfaceHit != nil,
+            timestamp: timestamp,
+            meshHit: fingerSurfaceHit
         )
         let depthDebug = depthSample.map {
             DepthSamplingDebug(
@@ -544,6 +569,37 @@ private extension ARSessionModel {
             overlay.sourceSampleCount,
             overlay.mapping
         )
+    }
+
+    func nearestFingerSurfaceHit(candidates: [HandJoint3D?]) -> NearestSurfaceHit? {
+        guard let metadata = brainSTLMetadata else { return nil }
+
+        let surfaceModel = SampledBrainSTLSurfaceModel(
+            metadata: metadata,
+            calibration: calibration
+        )
+
+        return candidates.compactMap { candidate -> NearestSurfaceHit? in
+            guard let candidate else { return nil }
+            return surfaceModel.nearestSurfaceHit(to: candidate)
+        }
+        .min { lhs, rhs in
+            lhs.distanceMeters < rhs.distanceMeters
+        }
+    }
+
+    func updateSTLNearestDebug(hit: NearestSurfaceHit?, fallbackPoint: HandJoint3D?) {
+        if let hit {
+            stlNearestDistanceText = String(format: "%.1fmm", hit.distanceMeters * 1000)
+            stlNearestSurfaceText = String(
+                format: "%@, conf %.2f",
+                hit.surfaceLabel,
+                hit.confidence
+            )
+            return
+        }
+
+        updateSTLNearestDebug(indexTip3D: fallbackPoint)
     }
 
     func updateSTLNearestDebug(indexTip3D: HandJoint3D?) {

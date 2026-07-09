@@ -39,6 +39,45 @@ enum DepthSampler {
         }
 
         let depthMap = depthData.depthMap
+        return sampleDepth(
+            visionPoint: sampleVisionPoint,
+            depthData: depthData,
+            capturedImage: capturedImage,
+            depthSource: depthSource,
+            kernelSize: kernelSize,
+            strategy: strategy
+        )
+    }
+
+    static func sampleHandJointDepth(
+        visionPoint: CGPoint?,
+        jointName: String,
+        depthData: ARDepthData?,
+        capturedImage: CVPixelBuffer,
+        depthSource: String,
+        kernelSize: Int = 7
+    ) -> DepthSampleResult? {
+        guard let visionPoint, let depthData else { return nil }
+
+        return sampleDepth(
+            visionPoint: visionPoint,
+            depthData: depthData,
+            capturedImage: capturedImage,
+            depthSource: depthSource,
+            kernelSize: kernelSize,
+            strategy: "\(jointName)_confidence_near_percentile_20"
+        )
+    }
+
+    private static func sampleDepth(
+        visionPoint: CGPoint,
+        depthData: ARDepthData,
+        capturedImage: CVPixelBuffer,
+        depthSource: String,
+        kernelSize: Int,
+        strategy: String
+    ) -> DepthSampleResult? {
+        let depthMap = depthData.depthMap
         guard CVPixelBufferGetPixelFormatType(depthMap) == kCVPixelFormatType_DepthFloat32 else {
             return nil
         }
@@ -47,7 +86,7 @@ enum DepthSampler {
         let depthHeight = CVPixelBufferGetHeight(depthMap)
         guard depthWidth > 0, depthHeight > 0 else { return nil }
 
-        let rawImageNormalized = visionPointToRawImageNormalizedPortraitBack(sampleVisionPoint)
+        let rawImageNormalized = visionPointToRawImageNormalizedPortraitBack(visionPoint)
         guard rawImageNormalized.x >= 0,
               rawImageNormalized.x <= 1,
               rawImageNormalized.y >= 0,
@@ -121,7 +160,7 @@ enum DepthSampler {
 
         return DepthSampleResult(
             depthMeters: Double(selectedDepth),
-            sampleDisplayPoint: convertVisionPointToNormalizedDisplay(sampleVisionPoint),
+            sampleDisplayPoint: convertVisionPointToNormalizedDisplay(visionPoint),
             rawImageNormalized: HandJoint2D(
                 x: Double(rawImageNormalized.x),
                 y: Double(rawImageNormalized.y)
