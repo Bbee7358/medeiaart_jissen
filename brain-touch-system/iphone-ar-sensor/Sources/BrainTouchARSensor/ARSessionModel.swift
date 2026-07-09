@@ -29,6 +29,7 @@ final class ARSessionModel: NSObject, ObservableObject {
     @Published var depthCalibrationStatusText = "baseline needed"
     @Published var depthCalibrationSampleText = "-"
     @Published var depthCalibrationEstimateText = "-"
+    @Published var brainDetectionOverlay = BrainDepthDetectionOverlaySnapshot.empty
 
     private var lastFrameTimestamp: TimeInterval?
     private var lastHandPoseTimestamp: TimeInterval = 0
@@ -218,6 +219,7 @@ private extension ARSessionModel {
                     baseline.workingRadiusPixels
                 )
                 depthCalibrationEstimateText = "-"
+                brainDetectionOverlay = .empty
 
             case .estimateBrainFromBaseline:
                 guard let baseline = depthCalibrationBaseline else {
@@ -238,6 +240,7 @@ private extension ARSessionModel {
                 next.depthMeters = estimate.depthMeters
                 next.heightMeters = estimate.heightMeters
                 applyCalibration(next, save: true)
+                brainDetectionOverlay = estimate.overlay
 
                 depthCalibrationStatusText = "brain calibrated from depth"
                 depthCalibrationSampleText = String(

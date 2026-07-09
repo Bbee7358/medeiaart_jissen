@@ -40,6 +40,27 @@ struct DepthBrainCalibrationEstimate {
     let sampleCount: Int
     let centroidPixel: PixelPoint
     let bounds: DepthCalibrationBounds
+    let overlay: BrainDepthDetectionOverlaySnapshot
+}
+
+struct BrainDepthDetectionOverlaySnapshot: Equatable {
+    let points: [HandJoint2D]
+    let centroid: HandJoint2D
+    let boundsMin: HandJoint2D
+    let boundsMax: HandJoint2D
+    let depthMapSize: PixelSize
+    let candidateCount: Int
+    let mapping: String
+
+    static let empty = BrainDepthDetectionOverlaySnapshot(
+        points: [],
+        centroid: HandJoint2D(x: 0.5, y: 0.5),
+        boundsMin: HandJoint2D(x: 0.5, y: 0.5),
+        boundsMax: HandJoint2D(x: 0.5, y: 0.5),
+        depthMapSize: PixelSize(w: 0, h: 0),
+        candidateCount: 0,
+        mapping: "none"
+    )
 }
 
 enum DepthBrainCalibrationError: Error, CustomStringConvertible {
@@ -192,7 +213,7 @@ enum DepthBrainCalibrator {
         depthData: ARDepthData?,
         camera: ARCamera,
         baseline: DepthCalibrationBaseline,
-        minHeightMeters: Double = 0.03
+        minHeightMeters: Double = 0.015
     ) throws -> DepthBrainCalibrationEstimate {
         guard let depthData else {
             throw DepthBrainCalibrationError.depthUnavailable
@@ -251,6 +272,7 @@ enum DepthBrainCalibrator {
         var baselineSamples: [Float] = []
         var xSamples: [Int] = []
         var ySamples: [Int] = []
+        var candidatePixels: [PixelPoint] = []
         var sumX = 0.0
         var sumY = 0.0
 
@@ -278,6 +300,7 @@ enum DepthBrainCalibrator {
                 baselineSamples.append(baselineDepth)
                 xSamples.append(x)
                 ySamples.append(y)
+                candidatePixels.append(PixelPoint(x: x, y: y))
                 sumX += Double(x)
                 sumY += Double(y)
             }
@@ -297,6 +320,13 @@ enum DepthBrainCalibrator {
         let centroidX = sumX / Double(currentSamples.count)
         let centroidY = sumY / Double(currentSamples.count)
         let bounds = robustBounds(xSamples: xSamples, ySamples: ySamples)
+        let overlay = makeOverlay(
+            candidatePixels: candidatePixels,
+            centroidX: centroidX,
+            centroidY: centroidY,
+            bounds: bounds,
+            depthMapSize: actualSize
+        )
         let cameraSpaceCenter = PointUnprojector.unprojectPoint(
             pixelX: Float(centroidX),
             pixelY: Float(centroidY),
@@ -329,7 +359,8 @@ enum DepthBrainCalibrator {
             heightAboveBaselineMeters: heightAboveBaseline,
             sampleCount: currentSamples.count,
             centroidPixel: PixelPoint(x: Int(round(centroidX)), y: Int(round(centroidY))),
-            bounds: bounds
+            bounds: bounds,
+            overlay: overlay
         )
     }
 
@@ -424,6 +455,66 @@ enum DepthBrainCalibrator {
         let clampedRatio = clamp(ratio, min: 0, max: 1)
         let index = Int(round(clampedRatio * Double(sorted.count - 1)))
         return sorted[index]
+    }
+
+    private static func makeOverlay(
+        candidatePixels: [PixelPoint],
+        centroidX: Double,
+        centroidY: Double,
+        bounds: DepthCalibrationBounds,
+        depthMapSize: PixelSize
+    ) -> BrainDepthDetectionOverlaySnapshot {
+        let maxPointCount = 900
+        let step = max(1, candidatePixels.count / maxPointCount)
+        let points = candidatePixels.enumerated().compactMap { index, pixel -> HandJoint2D? in
+            guard index % step == 0 else { return nil }
+            return depthPixelToDisplayPoint(
+                x: Double(pixel.x),
+                y: Double(pixel.y),
+                depthMapSize: depthMapSize
+            )
+        }
+
+        return BrainDepthDetectionOverlaySnapshot(
+            points: points,
+            centroid: depthPixelToDisplayPoint(
+                x: centroidX,
+                y: centroidY,
+                depthMapSize: depthMapSize
+            ),
+            boundsMin: depthPixelToDisplayPoint(
+                x: Double(bounds.minX),
+                y: Double(bounds.minY),
+                depthMapSize: depthMapSize
+            ),
+            boundsMax: depthPixelToDisplayPoint(
+                x: Double(bounds.maxX),
+                y: Double(bounds.maxY),
+                depthMapSize: depthMapSize
+            ),
+            depthMapSize: depthMapSize,
+            candidateCount: candidatePixels.count,
+            mapping: "portrait_back_raw_to_display"
+        )
+    }
+
+    private static func depthPixelToDisplayPoint(
+        x: Double,
+        y: Double,
+        depthMapSize: PixelSize
+    ) -> HandJoint2D {
+        let safeWidth = max(1, depthMapSize.w - 1)
+        let safeHeight = max(1, depthMapSize.h - 1)
+        let rawX = clamp(x / Double(safeWidth), min: 0, max: 1)
+        let rawY = clamp(y / Double(safeHeight), min: 0, max: 1)
+
+        // ARKit depth maps arrive in the captured image's raw orientation. In the
+        // current portrait/back-camera setup, this is the inverse of
+        // DepthSampler.visionPointToRawImageNormalizedPortraitBack(_:).
+        return HandJoint2D(
+            x: 1.0 - rawY,
+            y: rawX
+        )
     }
 
     private static func clamp(_ value: Double, min minValue: Double, max maxValue: Double) -> Double {

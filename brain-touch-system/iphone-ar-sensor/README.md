@@ -247,7 +247,7 @@ Vision座標、ARKitカメラ画像、LiDAR深度マップは、実機の向き�
 - 高さ: `0.18m`
 - 形状: 楕円体
 
-AR画面上では、仮楕円体を半透明の青緑色で表示します。上面・左右・前方の目安として小さな色付きマーカーも表示します。
+AR画面上では、仮楕円体そのものは表示せず、LiDAR深度差で検出した脳候補を青緑の点群、黄色のbbox、赤い重心マークで表示します。まずは「LiDARがどこを脳として検出しているか」を直接確認する方針です。
 
 実空間と仮楕円体の位置が合っていない場合は、指先を置きたい中心位置に持っていき、`Set Center Here` を押してください。現在の `indexTip3D` を楕円体中心として記録します。
 
@@ -282,8 +282,8 @@ AR画面上では、仮楕円体を半透明の青緑色で表示します。上
 5. `depth calibration` が `empty baseline captured` になることを確認する
 6. 決めておいた向きで脳模型を置く
 7. 手を画角に入れずに `Calibrate Brain From Depth` を押す
-8. `depth calibration` が `brain calibrated from depth` になり、`depth calib estimate` に幅・奥行き・高さ・中心が表示されることを確認する
-9. AR画面上の半透明楕円体が実物の脳模型に近い位置で重なるか見る
+8. `depth calibration` が `brain calibrated from depth` になり、`depth calib estimate` に幅・奥行き・高さ・中心・検出bboxが表示されることを確認する
+9. 画面上の青緑の点群、黄色bbox、赤い重心マークが実物の脳模型に重なるか見る
 10. 必要に応じて `brain center x/y/z`, `brain width/depth/height` を手動で微調整する
 11. 左側面・右側面・前方・後方を指で触って確認する
 12. PCダッシュボードで `regionLabel`, `distanceCm`, `isTouching`, `confidence` が安定して表示されるか確認する

@@ -9,6 +9,9 @@ struct ContentView: View {
             ARViewContainer(sessionModel: sessionModel)
                 .ignoresSafeArea()
 
+            BrainDepthDetectionOverlay(snapshot: sessionModel.brainDetectionOverlay)
+                .ignoresSafeArea()
+
             FingerTipOverlay(point: sessionModel.handPose.fingerTips.indexTip)
                 .ignoresSafeArea()
 
@@ -33,7 +36,7 @@ struct ContentView: View {
                     DebugRow(label: "touch region", value: sessionModel.touchRegionText)
                     DebugRow(label: "touch distance", value: sessionModel.touchDistanceText)
                     DebugRow(label: "touch duration", value: sessionModel.touchDurationText)
-                    DebugRow(label: "ellipsoid center", value: sessionModel.brainModelCenterText)
+                    DebugRow(label: "touch model center", value: sessionModel.brainModelCenterText)
 
                     Divider()
                         .background(.white.opacity(0.28))
@@ -71,6 +74,8 @@ struct ContentView: View {
                     DebugRow(label: "depth calibration", value: sessionModel.depthCalibrationStatusText)
                     DebugRow(label: "depth calib samples", value: sessionModel.depthCalibrationSampleText)
                     DebugRow(label: "depth calib estimate", value: sessionModel.depthCalibrationEstimateText)
+                    DebugRow(label: "detected depth points", value: "\(sessionModel.brainDetectionOverlay.candidateCount)")
+                    DebugRow(label: "depth overlay map", value: sessionModel.brainDetectionOverlay.mapping)
 
                     CalibrationStepper(
                         label: "brain center x",
@@ -270,6 +275,68 @@ private struct DebugRow: View {
                 .multilineTextAlignment(.trailing)
         }
         .font(.caption.monospacedDigit())
+    }
+}
+
+private struct BrainDepthDetectionOverlay: View {
+    let snapshot: BrainDepthDetectionOverlaySnapshot
+
+    var body: some View {
+        GeometryReader { proxy in
+            Canvas { context, size in
+                guard snapshot.candidateCount > 0 else { return }
+
+                let pointSize = max(2.0, min(size.width, size.height) * 0.006)
+                let pointsPath = Path { path in
+                    for point in snapshot.points {
+                        let center = CGPoint(
+                            x: point.x * size.width,
+                            y: point.y * size.height
+                        )
+                        path.addEllipse(in: CGRect(
+                            x: center.x - pointSize / 2,
+                            y: center.y - pointSize / 2,
+                            width: pointSize,
+                            height: pointSize
+                        ))
+                    }
+                }
+                context.fill(pointsPath, with: .color(.cyan.opacity(0.72)))
+
+                let minPoint = CGPoint(
+                    x: snapshot.boundsMin.x * size.width,
+                    y: snapshot.boundsMin.y * size.height
+                )
+                let maxPoint = CGPoint(
+                    x: snapshot.boundsMax.x * size.width,
+                    y: snapshot.boundsMax.y * size.height
+                )
+                let bounds = CGRect(
+                    x: min(minPoint.x, maxPoint.x),
+                    y: min(minPoint.y, maxPoint.y),
+                    width: abs(maxPoint.x - minPoint.x),
+                    height: abs(maxPoint.y - minPoint.y)
+                )
+                context.stroke(
+                    Path(roundedRect: bounds, cornerRadius: 4),
+                    with: .color(.yellow),
+                    lineWidth: 3
+                )
+
+                let centroid = CGPoint(
+                    x: snapshot.centroid.x * size.width,
+                    y: snapshot.centroid.y * size.height
+                )
+                var cross = Path()
+                cross.move(to: CGPoint(x: centroid.x - 12, y: centroid.y))
+                cross.addLine(to: CGPoint(x: centroid.x + 12, y: centroid.y))
+                cross.move(to: CGPoint(x: centroid.x, y: centroid.y - 12))
+                cross.addLine(to: CGPoint(x: centroid.x, y: centroid.y + 12))
+                context.stroke(cross, with: .color(.red), lineWidth: 3)
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+        }
+        .allowsHitTesting(false)
     }
 }
 
