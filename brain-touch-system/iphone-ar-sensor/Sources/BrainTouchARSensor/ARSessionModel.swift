@@ -30,6 +30,12 @@ final class ARSessionModel: NSObject, ObservableObject {
     @Published var depthCalibrationSampleText = "-"
     @Published var depthCalibrationEstimateText = "-"
     @Published var brainDetectionOverlay = BrainDepthDetectionOverlaySnapshot.empty
+    @Published var stlStatusText = "loading..."
+    @Published var stlResourceText = "-"
+    @Published var stlRawSizeText = "-"
+    @Published var stlAssumedSizeText = "-"
+    @Published var stlScaleText = "-"
+    @Published var stlScaledSizeText = "-"
 
     private var lastFrameTimestamp: TimeInterval?
     private var lastHandPoseTimestamp: TimeInterval = 0
@@ -39,6 +45,7 @@ final class ARSessionModel: NSObject, ObservableObject {
     private let touchDetector: TouchDetector
     private var depthCalibrationBaseline: DepthCalibrationBaseline?
     private var pendingDepthCalibrationAction: DepthCalibrationAction?
+    private var brainSTLMetadata: BrainSTLMetadata?
 
     override init() {
         let loadedCalibration = BrainCalibrationStore.load()
@@ -48,6 +55,7 @@ final class ARSessionModel: NSObject, ObservableObject {
         self.touchDetector = TouchDetector(calibration: loadedCalibration)
         super.init()
         self.handPose = makeEmptySnapshot()
+        self.loadBrainSTLMetadata()
     }
 
     func setBrainModelCenterToCurrentFinger() {
@@ -446,6 +454,7 @@ private extension ARSessionModel {
         if save {
             BrainCalibrationStore.save(sanitized)
         }
+        updateSTLDebugText()
     }
 
     func recognizedJoint(
@@ -467,6 +476,61 @@ private extension ARSessionModel {
     func visionImageOrientation() -> CGImagePropertyOrientation {
         // TODO: Update this if the installation uses landscape mounting.
         .right
+    }
+
+    func loadBrainSTLMetadata() {
+        do {
+            let metadata = try BrainSTLMeshLoader.loadBundledMetadata()
+            brainSTLMetadata = metadata
+            stlStatusText = "loaded"
+            updateSTLDebugText()
+        } catch let error as BrainSTLMeshLoadError {
+            brainSTLMetadata = nil
+            stlStatusText = "error: \(error.description)"
+        } catch {
+            brainSTLMetadata = nil
+            stlStatusText = "error: \(error.localizedDescription)"
+        }
+    }
+
+    func updateSTLDebugText() {
+        guard let metadata = brainSTLMetadata else {
+            stlResourceText = "-"
+            stlRawSizeText = "-"
+            stlAssumedSizeText = "-"
+            stlScaleText = "-"
+            stlScaledSizeText = "-"
+            return
+        }
+
+        let bounds = metadata.boundingBox
+        let scale = metadata.scaleForRealWidthMeters(calibration.meshRealWidthMeters)
+        let scaled = metadata.scaledSizeMeters(realWidthMeters: calibration.meshRealWidthMeters)
+        stlResourceText = "\(metadata.resourceName), \(metadata.triangleCount) tris"
+        stlRawSizeText = String(
+            format: "%.3f x %.3f x %.3f units",
+            bounds.widthUnits,
+            bounds.depthUnits,
+            bounds.heightUnits
+        )
+        stlAssumedSizeText = String(
+            format: "%.4f x %.4f x %.4f m as mm",
+            bounds.widthMetersAssumingMillimeters,
+            bounds.depthMetersAssumingMillimeters,
+            bounds.heightMetersAssumingMillimeters
+        )
+        stlScaleText = String(
+            format: "%.1fx from real width %.3fm",
+            scale,
+            calibration.meshRealWidthMeters
+        )
+        stlScaledSizeText = String(
+            format: "%.3f x %.3f x %.3f m, yaw %.1fdeg",
+            scaled.width,
+            scaled.depth,
+            scaled.height,
+            calibration.meshYawDegrees
+        )
     }
 }
 

@@ -19,6 +19,8 @@
 		110000000000000000000010 /* BrainCalibration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000112 /* BrainCalibration.swift */; };
 		110000000000000000000011 /* MeshTouchInterfaces.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000113 /* MeshTouchInterfaces.swift */; };
 		110000000000000000000012 /* DepthBrainCalibrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000114 /* DepthBrainCalibrator.swift */; };
+		110000000000000000000013 /* BrainSTLMesh.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000115 /* BrainSTLMesh.swift */; };
+		110000000000000000000014 /* brain_model.stl in Resources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000116 /* brain_model.stl */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -36,6 +38,8 @@
 		110000000000000000000112 /* BrainCalibration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainCalibration.swift; sourceTree = "<group>"; };
 		110000000000000000000113 /* MeshTouchInterfaces.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshTouchInterfaces.swift; sourceTree = "<group>"; };
 		110000000000000000000114 /* DepthBrainCalibrator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DepthBrainCalibrator.swift; sourceTree = "<group>"; };
+		110000000000000000000115 /* BrainSTLMesh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainSTLMesh.swift; sourceTree = "<group>"; };
+		110000000000000000000116 /* brain_model.stl */ = {isa = PBXFileReference; lastKnownFileType = file; path = brain_model.stl; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -54,6 +58,7 @@
 			children = (
 				110000000000000000000302 /* Sources/BrainTouchARSensor */,
 				110000000000000000000303 /* Config */,
+				110000000000000000000305 /* Resources */,
 				110000000000000000000304 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -73,6 +78,7 @@
 				110000000000000000000112 /* BrainCalibration.swift */,
 				110000000000000000000113 /* MeshTouchInterfaces.swift */,
 				110000000000000000000114 /* DepthBrainCalibrator.swift */,
+				110000000000000000000115 /* BrainSTLMesh.swift */,
 			);
 			path = Sources/BrainTouchARSensor;
 			sourceTree = "<group>";
@@ -93,6 +99,14 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		110000000000000000000305 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				110000000000000000000116 /* brain_model.stl */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -102,6 +116,7 @@
 			buildPhases = (
 				110000000000000000000601 /* Sources */,
 				110000000000000000000201 /* Frameworks */,
+				110000000000000000000602 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -145,6 +160,17 @@
 		};
 /* End PBXProject section */
 
+/* Begin PBXResourcesBuildPhase section */
+		110000000000000000000602 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				110000000000000000000014 /* brain_model.stl in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		110000000000000000000601 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -162,6 +188,7 @@
 				110000000000000000000010 /* BrainCalibration.swift in Sources */,
 				110000000000000000000011 /* MeshTouchInterfaces.swift in Sources */,
 				110000000000000000000012 /* DepthBrainCalibrator.swift in Sources */,
+				110000000000000000000013 /* BrainSTLMesh.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

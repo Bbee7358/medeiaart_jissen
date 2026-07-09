@@ -75,6 +75,19 @@ struct ContentView: View {
                     DebugRow(label: "max raised height", value: String(format: "%.1fcm", sessionModel.brainDetectionOverlay.maxRaisedHeightMeters * 100))
                     DebugRow(label: "depth overlay map", value: sessionModel.brainDetectionOverlay.mapping)
 
+                    Divider()
+                        .background(.white.opacity(0.28))
+
+                    Text("STL Mesh")
+                        .font(.subheadline.weight(.semibold))
+
+                    DebugRow(label: "stl status", value: sessionModel.stlStatusText)
+                    DebugRow(label: "stl resource", value: sessionModel.stlResourceText)
+                    DebugRow(label: "stl raw size", value: sessionModel.stlRawSizeText)
+                    DebugRow(label: "stl mm->m size", value: sessionModel.stlAssumedSizeText)
+                    DebugRow(label: "stl scale", value: sessionModel.stlScaleText)
+                    DebugRow(label: "stl world size", value: sessionModel.stlScaledSizeText)
+
                     CalibrationStepper(
                         label: "brain center x",
                         value: calibrationBinding(\.centerX),
@@ -116,6 +129,20 @@ struct ContentView: View {
                         range: 0.05...1.0,
                         step: 0.01,
                         unit: "m"
+                    )
+                    CalibrationStepper(
+                        label: "mesh real width",
+                        value: calibrationBinding(\.meshRealWidthMeters),
+                        range: 0.03...1.0,
+                        step: 0.005,
+                        unit: "m"
+                    )
+                    CalibrationStepper(
+                        label: "mesh yaw",
+                        value: calibrationBinding(\.meshYawDegrees),
+                        range: -180.0...180.0,
+                        step: 1.0,
+                        unit: "deg"
                     )
                     CalibrationStepper(
                         label: "touch threshold",

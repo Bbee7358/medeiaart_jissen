@@ -7,6 +7,8 @@ struct BrainCalibration: Codable, Equatable {
     var widthMeters: Double
     var depthMeters: Double
     var heightMeters: Double
+    var meshRealWidthMeters: Double
+    var meshYawDegrees: Double
     var touchThresholdCm: Double
     var strongTouchThresholdCm: Double
     var dwellTimeSeconds: Double
@@ -20,6 +22,8 @@ struct BrainCalibration: Codable, Equatable {
         widthMeters: 0.35,
         depthMeters: 0.25,
         heightMeters: 0.18,
+        meshRealWidthMeters: 0.15,
+        meshYawDegrees: 0,
         touchThresholdCm: 5.0,
         strongTouchThresholdCm: 3.0,
         dwellTimeSeconds: 0.50,
@@ -34,6 +38,8 @@ struct BrainCalibration: Codable, Equatable {
         widthMeters: Double,
         depthMeters: Double,
         heightMeters: Double,
+        meshRealWidthMeters: Double,
+        meshYawDegrees: Double,
         touchThresholdCm: Double,
         strongTouchThresholdCm: Double,
         dwellTimeSeconds: Double,
@@ -46,6 +52,8 @@ struct BrainCalibration: Codable, Equatable {
         self.widthMeters = widthMeters
         self.depthMeters = depthMeters
         self.heightMeters = heightMeters
+        self.meshRealWidthMeters = meshRealWidthMeters
+        self.meshYawDegrees = meshYawDegrees
         self.touchThresholdCm = touchThresholdCm
         self.strongTouchThresholdCm = strongTouchThresholdCm
         self.dwellTimeSeconds = dwellTimeSeconds
@@ -60,6 +68,8 @@ struct BrainCalibration: Codable, Equatable {
         case widthMeters
         case depthMeters
         case heightMeters
+        case meshRealWidthMeters
+        case meshYawDegrees
         case touchThresholdCm
         case strongTouchThresholdCm
         case dwellTimeSeconds
@@ -77,6 +87,8 @@ struct BrainCalibration: Codable, Equatable {
         widthMeters = try container.decodeIfPresent(Double.self, forKey: .widthMeters) ?? defaults.widthMeters
         depthMeters = try container.decodeIfPresent(Double.self, forKey: .depthMeters) ?? defaults.depthMeters
         heightMeters = try container.decodeIfPresent(Double.self, forKey: .heightMeters) ?? defaults.heightMeters
+        meshRealWidthMeters = try container.decodeIfPresent(Double.self, forKey: .meshRealWidthMeters) ?? defaults.meshRealWidthMeters
+        meshYawDegrees = try container.decodeIfPresent(Double.self, forKey: .meshYawDegrees) ?? defaults.meshYawDegrees
         touchThresholdCm = try container.decodeIfPresent(Double.self, forKey: .touchThresholdCm) ?? defaults.touchThresholdCm
         strongTouchThresholdCm = try container.decodeIfPresent(Double.self, forKey: .strongTouchThresholdCm) ?? defaults.strongTouchThresholdCm
         dwellTimeSeconds = try container.decodeIfPresent(Double.self, forKey: .dwellTimeSeconds)
@@ -94,6 +106,8 @@ struct BrainCalibration: Codable, Equatable {
         try container.encode(widthMeters, forKey: .widthMeters)
         try container.encode(depthMeters, forKey: .depthMeters)
         try container.encode(heightMeters, forKey: .heightMeters)
+        try container.encode(meshRealWidthMeters, forKey: .meshRealWidthMeters)
+        try container.encode(meshYawDegrees, forKey: .meshYawDegrees)
         try container.encode(touchThresholdCm, forKey: .touchThresholdCm)
         try container.encode(strongTouchThresholdCm, forKey: .strongTouchThresholdCm)
         try container.encode(dwellTimeSeconds, forKey: .dwellTimeSeconds)
@@ -149,6 +163,8 @@ enum BrainCalibrationStore {
             widthMeters: clamp(calibration.widthMeters, min: 0.05, max: 1.00),
             depthMeters: clamp(calibration.depthMeters, min: 0.05, max: 1.00),
             heightMeters: clamp(calibration.heightMeters, min: 0.05, max: 1.00),
+            meshRealWidthMeters: clamp(calibration.meshRealWidthMeters, min: 0.03, max: 1.00),
+            meshYawDegrees: clamp(calibration.meshYawDegrees, min: -180.0, max: 180.0),
             touchThresholdCm: clamp(calibration.touchThresholdCm, min: 0.5, max: 20.0),
             strongTouchThresholdCm: clamp(calibration.strongTouchThresholdCm, min: 0.5, max: 20.0),
             dwellTimeSeconds: clamp(calibration.dwellTimeSeconds, min: 0.0, max: 3.0),

@@ -269,6 +269,28 @@ AR画面上では、仮楕円体そのものは表示せず、LiDAR深度差で�
 
 変更した値は `UserDefaults` に保存され、アプリ再起動後も保持されます。`Reset calibration` を押すと初期値に戻ります。現在の設定値はWebSocketの `debug.calibration` にも入ります。
 
+### STLメッシュ読み込み
+
+`Resources/brain_model.stl` に、3Dプリント脳模型用のSTLを同梱しています。起動時にバイナリSTLのtriangle数とbounding boxだけを読み、`STL Mesh` セクションに表示します。
+
+現在確認できる項目:
+
+- `stl status`: STLを読み込めたか
+- `stl resource`: ファイル名とtriangle数
+- `stl raw size`: STLファイル内の生のbounding boxサイズ
+- `stl mm->m size`: STL単位をmmと仮定した場合のサイズ
+- `stl scale`: 実物横幅に合わせるためのscale
+- `stl world size`: scale適用後の世界空間サイズとyaw
+
+今回のSTLはraw bounding boxの横幅が約 `0.816 units` で、一般的なmm単位STLより小さい正規化済みデータに見えます。そのため `stl mm->m size` は非常に小さく、`stl scale` は大きく表示されます。実際の判定では `mesh real width` に実物の横幅を入力し、その値を基準に世界空間サイズを決めます。
+
+`Calibration` セクションで以下を調整できます。
+
+- `mesh real width`: 実物の脳模型の横幅m。STL scaleの基準
+- `mesh yaw`: 真上から見たSTLの回転角度
+
+この段階では、STLの最近傍距離判定やワイヤーフレーム投影はまだ実装していません。まず「アプリ内でSTLが読める」「STLサイズとscaleが画面で確認できる」状態を作っています。
+
 ### LiDAR深度差による粗い自動キャリブレーション
 
 固定したiPhoneの下に何もない状態を先に記録し、そのあと置いた脳模型だけをLiDAR深度差で抽出して、仮楕円体の中心・幅・奥行き・高さへ反映できます。
