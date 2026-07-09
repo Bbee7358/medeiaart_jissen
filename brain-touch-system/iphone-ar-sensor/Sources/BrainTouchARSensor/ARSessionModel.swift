@@ -244,8 +244,12 @@ private extension ARSessionModel {
 
                 depthCalibrationStatusText = "brain calibrated from depth"
                 depthCalibrationSampleText = String(
-                    format: "object %d px, top %.2fm, base %.2fm",
+                    format: "object %d px, weak %d, median %d, L/R %d/%d, top %.2fm, base %.2fm",
                     estimate.sampleCount,
+                    estimate.weakCandidateCount,
+                    estimate.medianCandidateCount,
+                    estimate.leftCandidateCount,
+                    estimate.rightCandidateCount,
                     estimate.topSurfaceDepthMeters,
                     estimate.baselineDepthMeters
                 )

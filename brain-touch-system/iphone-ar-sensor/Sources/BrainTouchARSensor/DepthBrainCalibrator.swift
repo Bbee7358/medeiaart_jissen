@@ -38,6 +38,10 @@ struct DepthBrainCalibrationEstimate {
     let baselineDepthMeters: Double
     let heightAboveBaselineMeters: Double
     let sampleCount: Int
+    let weakCandidateCount: Int
+    let medianCandidateCount: Int
+    let leftCandidateCount: Int
+    let rightCandidateCount: Int
     let centroidPixel: PixelPoint
     let bounds: DepthCalibrationBounds
     let overlay: BrainDepthDetectionOverlaySnapshot
@@ -213,7 +217,7 @@ enum DepthBrainCalibrator {
         depthData: ARDepthData?,
         camera: ARCamera,
         baseline: DepthCalibrationBaseline,
-        minHeightMeters: Double = 0.015
+        minHeightMeters: Double = 0.008
     ) throws -> DepthBrainCalibrationEstimate {
         guard let depthData else {
             throw DepthBrainCalibrationError.depthUnavailable
@@ -260,12 +264,8 @@ enum DepthBrainCalibrator {
         }
 
         let depthBytesPerRow = CVPixelBufferGetBytesPerRow(depthMap)
-        let confidenceReader = makeConfidenceReader(
-            confidenceMap: depthData.confidenceMap,
-            depthWidth: width,
-            depthHeight: height
-        )
         let minHeight = Float(minHeightMeters)
+        let weakMinHeight = Float(0.004)
         let maxReasonableHeight: Float = 0.60
 
         var currentSamples: [Float] = []
@@ -273,6 +273,10 @@ enum DepthBrainCalibrator {
         var xSamples: [Int] = []
         var ySamples: [Int] = []
         var candidatePixels: [PixelPoint] = []
+        var weakCandidateCount = 0
+        var medianCandidateCount = 0
+        var leftCandidateCount = 0
+        var rightCandidateCount = 0
         var sumX = 0.0
         var sumY = 0.0
 
@@ -280,8 +284,7 @@ enum DepthBrainCalibrator {
             for x in 0..<width {
                 let index = y * width + x
                 let baselineDepth = baseline.depths[index]
-                guard isValidDepth(baselineDepth),
-                      confidenceReader.isUsable(x, y) else {
+                guard isValidDepth(baselineDepth) else {
                     continue
                 }
 
@@ -294,13 +297,32 @@ enum DepthBrainCalibrator {
                 guard isValidDepth(currentDepth) else { continue }
 
                 let delta = baselineDepth - currentDepth
-                guard delta >= minHeight, delta <= maxReasonableHeight else { continue }
+                let medianDelta = Float(baseline.medianDepthMeters) - currentDepth
+                if max(delta, medianDelta) >= weakMinHeight,
+                   max(delta, medianDelta) <= maxReasonableHeight {
+                    weakCandidateCount += 1
+                }
+                if medianDelta >= minHeight,
+                   medianDelta <= maxReasonableHeight {
+                    medianCandidateCount += 1
+                }
+
+                let selectedDelta = max(delta, medianDelta)
+                guard selectedDelta >= minHeight,
+                      selectedDelta <= maxReasonableHeight else {
+                    continue
+                }
 
                 currentSamples.append(currentDepth)
                 baselineSamples.append(baselineDepth)
                 xSamples.append(x)
                 ySamples.append(y)
                 candidatePixels.append(PixelPoint(x: x, y: y))
+                if x < width / 2 {
+                    leftCandidateCount += 1
+                } else {
+                    rightCandidateCount += 1
+                }
                 sumX += Double(x)
                 sumY += Double(y)
             }
@@ -358,6 +380,10 @@ enum DepthBrainCalibrator {
             baselineDepthMeters: Double(baselineMedianDepth),
             heightAboveBaselineMeters: heightAboveBaseline,
             sampleCount: currentSamples.count,
+            weakCandidateCount: weakCandidateCount,
+            medianCandidateCount: medianCandidateCount,
+            leftCandidateCount: leftCandidateCount,
+            rightCandidateCount: rightCandidateCount,
             centroidPixel: PixelPoint(x: Int(round(centroidX)), y: Int(round(centroidY))),
             bounds: bounds,
             overlay: overlay
