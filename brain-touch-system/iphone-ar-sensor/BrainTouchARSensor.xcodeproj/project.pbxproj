@@ -21,6 +21,7 @@
 		110000000000000000000012 /* DepthBrainCalibrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000114 /* DepthBrainCalibrator.swift */; };
 		110000000000000000000013 /* BrainSTLMesh.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000115 /* BrainSTLMesh.swift */; };
 		110000000000000000000014 /* brain_model.stl in Resources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000116 /* brain_model.stl */; };
+		110000000000000000000015 /* BrainSTLProjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000117 /* BrainSTLProjection.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -40,6 +41,7 @@
 		110000000000000000000114 /* DepthBrainCalibrator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DepthBrainCalibrator.swift; sourceTree = "<group>"; };
 		110000000000000000000115 /* BrainSTLMesh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainSTLMesh.swift; sourceTree = "<group>"; };
 		110000000000000000000116 /* brain_model.stl */ = {isa = PBXFileReference; lastKnownFileType = file; path = brain_model.stl; sourceTree = "<group>"; };
+		110000000000000000000117 /* BrainSTLProjection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainSTLProjection.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -79,6 +81,7 @@
 				110000000000000000000113 /* MeshTouchInterfaces.swift */,
 				110000000000000000000114 /* DepthBrainCalibrator.swift */,
 				110000000000000000000115 /* BrainSTLMesh.swift */,
+				110000000000000000000117 /* BrainSTLProjection.swift */,
 			);
 			path = Sources/BrainTouchARSensor;
 			sourceTree = "<group>";
@@ -189,6 +192,7 @@
 				110000000000000000000011 /* MeshTouchInterfaces.swift in Sources */,
 				110000000000000000000012 /* DepthBrainCalibrator.swift in Sources */,
 				110000000000000000000013 /* BrainSTLMesh.swift in Sources */,
+				110000000000000000000015 /* BrainSTLProjection.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

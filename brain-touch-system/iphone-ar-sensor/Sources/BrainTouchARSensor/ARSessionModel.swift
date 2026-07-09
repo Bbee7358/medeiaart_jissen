@@ -36,6 +36,8 @@ final class ARSessionModel: NSObject, ObservableObject {
     @Published var stlAssumedSizeText = "-"
     @Published var stlScaleText = "-"
     @Published var stlScaledSizeText = "-"
+    @Published var stlProjectionText = "-"
+    @Published var stlProjectionOverlay = STLProjectionOverlaySnapshot.empty
 
     private var lastFrameTimestamp: TimeInterval?
     private var lastHandPoseTimestamp: TimeInterval = 0
@@ -141,6 +143,7 @@ extension ARSessionModel: ARSessionDelegate {
         Task { @MainActor in
             self.updateFrameMetrics(timestamp: timestamp, hasDepth: hasDepth)
             self.processDepthCalibrationIfNeeded(depthData: depthData, camera: camera)
+            self.updateSTLProjection(camera: camera)
             self.detectHandPoseIfNeeded(
                 pixelBuffer: pixelBuffer,
                 depthData: depthData,
@@ -500,6 +503,8 @@ private extension ARSessionModel {
             stlAssumedSizeText = "-"
             stlScaleText = "-"
             stlScaledSizeText = "-"
+            stlProjectionText = "-"
+            stlProjectionOverlay = .empty
             return
         }
 
@@ -530,6 +535,26 @@ private extension ARSessionModel {
             scaled.depth,
             scaled.height,
             calibration.meshYawDegrees
+        )
+    }
+
+    func updateSTLProjection(camera: ARCamera) {
+        let overlay = BrainSTLProjector.makeOverlay(
+            metadata: brainSTLMetadata,
+            calibration: calibration,
+            camera: camera
+        )
+        stlProjectionOverlay = overlay
+        guard overlay.sourceSampleCount > 0 else {
+            stlProjectionText = "-"
+            return
+        }
+
+        stlProjectionText = String(
+            format: "%d/%d pts, %@",
+            overlay.projectedPointCount,
+            overlay.sourceSampleCount,
+            overlay.mapping
         )
     }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import simd
 
 struct STLBoundingBox: Equatable {
     let minX: Float
@@ -15,12 +16,21 @@ struct STLBoundingBox: Equatable {
     var widthMetersAssumingMillimeters: Double { widthUnits / 1000 }
     var depthMetersAssumingMillimeters: Double { depthUnits / 1000 }
     var heightMetersAssumingMillimeters: Double { heightUnits / 1000 }
+
+    var centerRaw: SIMD3<Float> {
+        SIMD3<Float>(
+            (minX + maxX) * 0.5,
+            (minY + maxY) * 0.5,
+            (minZ + maxZ) * 0.5
+        )
+    }
 }
 
 struct BrainSTLMetadata: Equatable {
     let resourceName: String
     let triangleCount: Int
     let boundingBox: STLBoundingBox
+    let sampleVerticesRaw: [SIMD3<Float>]
 
     func scaleForRealWidthMeters(_ realWidthMeters: Double) -> Double {
         guard boundingBox.widthMetersAssumingMillimeters > 0 else { return 1 }
@@ -34,6 +44,10 @@ struct BrainSTLMetadata: Equatable {
             depth: boundingBox.depthMetersAssumingMillimeters * scale,
             height: boundingBox.heightMetersAssumingMillimeters * scale
         )
+    }
+
+    func rawUnitToWorldMetersScale(realWidthMeters: Double) -> Double {
+        0.001 * scaleForRealWidthMeters(realWidthMeters)
     }
 }
 
@@ -60,6 +74,7 @@ enum BrainSTLMeshLoadError: Error, CustomStringConvertible {
 enum BrainSTLMeshLoader {
     static let bundledResourceName = "brain_model"
     static let bundledResourceExtension = "stl"
+    static let maxProjectionSampleVertexCount = 3200
 
     static func loadBundledMetadata() throws -> BrainSTLMetadata {
         try loadMetadata(
@@ -111,6 +126,10 @@ enum BrainSTLMeshLoader {
         var maxX = -Float.greatestFiniteMagnitude
         var maxY = -Float.greatestFiniteMagnitude
         var maxZ = -Float.greatestFiniteMagnitude
+        var sampleVertices: [SIMD3<Float>] = []
+        sampleVertices.reserveCapacity(maxProjectionSampleVertexCount)
+        let totalVertexCount = triangleCount * 3
+        let sampleStep = max(1, totalVertexCount / maxProjectionSampleVertexCount)
 
         try data.withUnsafeBytes { rawBuffer in
             for triangleIndex in 0..<triangleCount {
@@ -132,6 +151,12 @@ enum BrainSTLMeshLoader {
                     maxX = max(maxX, x)
                     maxY = max(maxY, y)
                     maxZ = max(maxZ, z)
+
+                    let globalVertexIndex = triangleIndex * 3 + vertexIndex
+                    if globalVertexIndex % sampleStep == 0,
+                       sampleVertices.count < maxProjectionSampleVertexCount {
+                        sampleVertices.append(SIMD3<Float>(x, y, z))
+                    }
                 }
             }
         }
@@ -146,7 +171,8 @@ enum BrainSTLMeshLoader {
                 maxX: maxX,
                 maxY: maxY,
                 maxZ: maxZ
-            )
+            ),
+            sampleVerticesRaw: sampleVertices
         )
     }
 

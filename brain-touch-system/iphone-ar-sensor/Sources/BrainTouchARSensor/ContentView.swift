@@ -87,6 +87,7 @@ struct ContentView: View {
                     DebugRow(label: "stl mm->m size", value: sessionModel.stlAssumedSizeText)
                     DebugRow(label: "stl scale", value: sessionModel.stlScaleText)
                     DebugRow(label: "stl world size", value: sessionModel.stlScaledSizeText)
+                    DebugRow(label: "stl projection", value: sessionModel.stlProjectionText)
 
                     CalibrationStepper(
                         label: "brain center x",
@@ -265,6 +266,9 @@ struct ContentView: View {
             BrainDepthDetectionOverlay(snapshot: sessionModel.brainDetectionOverlay)
                 .ignoresSafeArea()
 
+            STLProjectionOverlay(snapshot: sessionModel.stlProjectionOverlay)
+                .ignoresSafeArea()
+
             FingerTipOverlay(point: sessionModel.handPose.fingerTips.indexTip)
                 .ignoresSafeArea()
 
@@ -310,6 +314,68 @@ private struct DebugRow: View {
                 .multilineTextAlignment(.trailing)
         }
         .font(.caption.monospacedDigit())
+    }
+}
+
+private struct STLProjectionOverlay: View {
+    let snapshot: STLProjectionOverlaySnapshot
+
+    var body: some View {
+        GeometryReader { proxy in
+            Canvas { context, size in
+                guard snapshot.projectedPointCount > 0 else { return }
+
+                let pointSize = max(2.0, min(size.width, size.height) * 0.006)
+                let pointPath = Path { path in
+                    for point in snapshot.points {
+                        let center = CGPoint(
+                            x: point.x * size.width,
+                            y: point.y * size.height
+                        )
+                        path.addEllipse(in: CGRect(
+                            x: center.x - pointSize / 2,
+                            y: center.y - pointSize / 2,
+                            width: pointSize,
+                            height: pointSize
+                        ))
+                    }
+                }
+                context.fill(pointPath, with: .color(.green.opacity(0.62)))
+
+                let minPoint = CGPoint(
+                    x: snapshot.boundsMin.x * size.width,
+                    y: snapshot.boundsMin.y * size.height
+                )
+                let maxPoint = CGPoint(
+                    x: snapshot.boundsMax.x * size.width,
+                    y: snapshot.boundsMax.y * size.height
+                )
+                let bounds = CGRect(
+                    x: min(minPoint.x, maxPoint.x),
+                    y: min(minPoint.y, maxPoint.y),
+                    width: abs(maxPoint.x - minPoint.x),
+                    height: abs(maxPoint.y - minPoint.y)
+                )
+                context.stroke(
+                    Path(roundedRect: bounds, cornerRadius: 4),
+                    with: .color(.orange.opacity(0.95)),
+                    lineWidth: 4
+                )
+
+                let centroid = CGPoint(
+                    x: snapshot.centroid.x * size.width,
+                    y: snapshot.centroid.y * size.height
+                )
+                var cross = Path()
+                cross.move(to: CGPoint(x: centroid.x - 10, y: centroid.y))
+                cross.addLine(to: CGPoint(x: centroid.x + 10, y: centroid.y))
+                cross.move(to: CGPoint(x: centroid.x, y: centroid.y - 10))
+                cross.addLine(to: CGPoint(x: centroid.x, y: centroid.y + 10))
+                context.stroke(cross, with: .color(.orange), lineWidth: 5)
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+        }
+        .allowsHitTesting(false)
     }
 }
 
@@ -450,6 +516,9 @@ private struct DepthDiagnosticBadge: View {
             Text("white raw  purple/red raised  yellow weak  cyan adopted")
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.white)
+            Text("green/orange STL projection")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.green.opacity(0.95))
             Text(
                 String(
                     format: "raw %d  raised %d  weak %d  adopted %d  max %.1fcm",
