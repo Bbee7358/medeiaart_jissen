@@ -2,7 +2,7 @@
 
 iPhone 12 Proをカメラ + LiDARセンサーとして使うための最小iOSアプリ構成です。
 
-この段階では、ARSessionを起動し、LiDAR対応端末で `sceneDepth` または `smoothedSceneDepth` が利用できるかを画面に表示します。また、Apple Visionでカメラ画像から手の関節を検出し、PC側WebSocketサーバーへ1秒ごとにテストJSONを送信できます。
+この段階では、ARSessionを起動し、LiDAR対応端末で `sceneDepth` または `smoothedSceneDepth` が利用できるかを画面に表示します。また、MediaPipe Hand Landmarkerでカメラ画像から手の21関節を検出し、PC側WebSocketサーバーへ1秒ごとにJSONを送信できます。
 
 ## 方針
 
@@ -14,6 +14,12 @@ Xcodeプロジェクトはこのリポジトリ内に生成済みです。
 BrainTouchARSensor.xcodeproj
 ```
 
+MediaPipeを有効化した後は、CocoaPodsが生成する次のファイルを開きます。
+
+```text
+BrainTouchARSensor.xcworkspace
+```
+
 ## 想定環境
 
 - Xcode 15以降
@@ -22,19 +28,35 @@ BrainTouchARSensor.xcodeproj
 - Frameworks:
   - SwiftUI
   - ARKit
-- RealityKit
-  - Vision
+  - RealityKit
+  - MediaPipe Tasks Vision
+
+MediaPipe Tasks VisionはCocoaPods経由で導入します。`pod install` を実行するまでは、アプリ上に `MediaPipeTasksVision not installed` と表示され、手検出は行われません。
 
 LiDAR深度はシミュレータでは確認できません。必ずiPhone 12 Pro実機で実行してください。
 
 ## Xcodeで開く手順
 
 1. Xcodeを開く
-2. `BrainTouchARSensor.xcodeproj` を開く
+2. MediaPipe導入前は `BrainTouchARSensor.xcodeproj`、導入後は `BrainTouchARSensor.xcworkspace` を開く
 3. 左側のプロジェクトナビゲータで `BrainTouchARSensor` プロジェクトを選ぶ
 4. `TARGETS > BrainTouchARSensor` を選ぶ
 5. `Signing & Capabilities` で自分のTeamを選ぶ
 6. Bundle Identifierを自分の環境で一意になる名前にする
+
+## MediaPipe導入
+
+このアプリはApple VisionからMediaPipe Hand Landmarkerへ移行しています。MediaPipe本体はCocoaPodsで追加します。
+
+```sh
+cd /Users/home_folder/Documents/sfc/mediaart_jissen/brain-touch-system/iphone-ar-sensor
+pod install
+open BrainTouchARSensor.xcworkspace
+```
+
+もし `pod: command not found` と出る場合は、MacにCocoaPodsが入っていません。CocoaPodsをインストールしてから再度 `pod install` を実行してください。
+
+MediaPipeモデルは `Resources/hand_landmarker.task` として同梱しています。
 
 ## 必要な権限
 
@@ -82,12 +104,16 @@ Brain touch detection uses the camera and LiDAR depth sensor to align the AR sce
 
 ## 手の関節検出
 
-Apple Visionの `VNDetectHumanHandPoseRequest` を使い、ARKitの `ARFrame.capturedImage` から手のポーズを検出します。
+MediaPipe Hand Landmarkerを使い、ARKitの `ARFrame.capturedImage` から手のポーズを検出します。Apple Visionによる手検出は使っていません。
 
 現在取得している関節:
 
+- MediaPipeの21関節すべて
 - `wrist`
 - `thumbTip`
+- `indexMCP`
+- `indexPIP`
+- `indexDIP`
 - `indexTip`
 - `middleTip`
 - `ringTip`
@@ -95,6 +121,10 @@ Apple Visionの `VNDetectHumanHandPoseRequest` を使い、ARKitの `ARFrame.cap
 
 最初は1つの手だけを対象にしています。画面には以下を表示します。
 
+- `hand detector`
+- `detector status`
+- `detected joints`
+- `hand inference`
 - `handDetected`
 - `indexTip normalized x`
 - `indexTip normalized y`
@@ -103,18 +133,20 @@ Apple Visionの `VNDetectHumanHandPoseRequest` を使い、ARKitの `ARFrame.cap
 - `depth confidence`
 - `confidence`
 
-Visionの正規化座標は左下原点のため、画面表示用には上方向を反転しています。深度サンプリング用には、縦向き・背面カメラ・`VNImageRequestHandler` の `orientation: .right` を前提に、Vision座標をARKit captured imageのネイティブ座標へ戻してからdepth mapへ変換しています。実際の展示時のiPhone固定向きによって左右反転・回転の調整が必要になる可能性があります。
+画面上には、MediaPipeが返した21関節を点で表示し、手の骨格線も重ねて表示します。指先は黄色、その他の関節は水色、骨格線はミント色です。
+
+MediaPipeの正規化座標は、縦向き・背面カメラでの表示に合わせて `x = 1 - y`, `y = x` に変換しています。深度サンプリングでは、この表示座標を既存の深度サンプリング用座標へ戻して使います。実際の展示時のiPhone固定向きによって左右反転・回転の調整が必要になる可能性があります。
 
 ## LiDAR深度サンプリング
 
-`DepthSampler.sampleIndexFingerDepth(...)` で、Visionから得た人差し指座標に対応するLiDAR深度を取得します。
+`DepthSampler.sampleIndexFingerDepth(...)` で、MediaPipeから得た人差し指座標に対応するLiDAR深度を取得します。
 
 処理:
 
 1. `ARFrame.smoothedSceneDepth` を優先して取得する
 2. なければ `ARFrame.sceneDepth` を使う
 3. `indexTip` ちょうどではなく、`indexTip` から `indexDIP` 側へ25%戻した点を深度サンプル点にする
-4. Vision座標を captured image のネイティブ正規化座標へ変換する
+4. MediaPipe表示座標を captured image のネイティブ正規化座標へ変換する
 5. captured image正規化座標をdepth mapピクセルへ変換する
 6. 周辺7x7ピクセルをサンプリングする
 7. confidence map がある場合、最低信頼度のサンプルを除外する
@@ -138,7 +170,7 @@ Visionの正規化座標は左下原点のため、画面表示用には上方�
 
 注意:
 
-現在は縦向き・背面カメラ・`orientation: .right` 固定で検証する前提です。PCダッシュボードで、黄色い点がVisionの `indexTip`、オレンジのリングが実際にdepthを読むサンプル点です。指を画面の左上、右上、左下、右下に動かし、黄色い点とオレンジのリングが同じ方向へ動くか確認してください。逆方向に動く場合は、`DepthSampler.visionPointToRawImageNormalizedPortraitBack(_:)` の変換候補を調整します。
+現在は縦向き・背面カメラ固定で検証する前提です。iPhone画面で、黄色い点がMediaPipeの指先、骨格線がMediaPipeの手認識、深度サンプル表示が実際にdepthを読む点です。指を画面の左上、右上、左下、右下に動かし、関節点と深度サンプルが同じ方向へ動くか確認してください。逆方向に動く場合は、`MediaPipeHandLandmarker.normalizedLandmarkToDisplayPoint(_:)` または `DepthSampler.visionPointToRawImageNormalizedPortraitBack(_:)` の変換候補を調整します。
 
 ## PC側との接続手順
 
@@ -193,9 +225,14 @@ PCダッシュボード側でしきい値を変更すると、同じWebSocket経
 
 手検出前の状態を表すため、`handDetected` と `isTouching` は `false` です。
 
-Visionで手を検出できた場合は、以下も送信します。
+MediaPipeで手を検出できた場合は、以下も送信します。
 
 - `handDetected: true`
+- `debug.handDetectorSource`
+- `debug.handDetectorStatus`
+- `debug.handDetectorInferenceMs`
+- `debug.handLandmarks2D`
+- `debug.detectedJointCount`
 - `debug.indexTip2D`
 - `debug.fingerTips2D`
 - `debug.depthMeters`
@@ -231,7 +268,7 @@ ARKitワールド座標系:
 
 注意:
 
-Vision座標、ARKitカメラ画像、LiDAR深度マップは、実機の向きやマウント方向によって回転・左右反転がずれる可能性があります。現在の変換は縦向きデバッグ表示を前提にしています。最終展示の固定位置で、実際に指先を動かしながら `convertVisionPointToNormalizedDisplay(_:)`, `DepthSampler`, `PointUnprojector` の対応を確認してください。
+MediaPipe座標、ARKitカメラ画像、LiDAR深度マップは、実機の向きやマウント方向によって回転・左右反転がずれる可能性があります。現在の変換は縦向きデバッグ表示を前提にしています。最終展示の固定位置で、実際に指先を動かしながら `MediaPipeHandLandmarker`, `DepthSampler`, `PointUnprojector` の対応を確認してください。
 
 `indexTip3D` は直近5サンプルの移動平均で平滑化しています。深度が取れない、または手が検出できない場合は `null` になります。
 

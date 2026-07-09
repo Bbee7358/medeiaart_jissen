@@ -417,6 +417,11 @@ private struct TouchTestDebug: Encodable {
     let indexTip3D: HandJoint3D?
     let indexTip3DSpace: String
     let depthMeters: Double?
+    let handDetectorSource: String
+    let handDetectorStatus: String
+    let handDetectorInferenceMs: Double?
+    let handLandmarks2D: [HandJoint2D?]
+    let detectedJointCount: Int
     let fingerTips2D: FingerTips2D
     let depthSample2D: HandJoint2D?
     let rawImageNorm: HandJoint2D?
@@ -439,6 +444,11 @@ private struct TouchTestDebug: Encodable {
         self.indexTip3D = handPose.indexTip3D
         self.indexTip3DSpace = handPose.indexTip3DSpace
         self.depthMeters = handPose.indexTipDepthMeters
+        self.handDetectorSource = handPose.detectorSource
+        self.handDetectorStatus = handPose.detectorStatus
+        self.handDetectorInferenceMs = handPose.detectorInferenceMs
+        self.handLandmarks2D = handPose.skeleton.landmarks
+        self.detectedJointCount = handPose.skeleton.detectedJointCount
         self.fingerTips2D = handPose.fingerTips
         self.depthSample2D = handPose.depthDebug?.depthSample2D
         self.rawImageNorm = handPose.depthDebug?.rawImageNorm
@@ -461,6 +471,11 @@ private struct TouchTestDebug: Encodable {
         case indexTip3D
         case indexTip3DSpace
         case depthMeters
+        case handDetectorSource
+        case handDetectorStatus
+        case handDetectorInferenceMs
+        case handLandmarks2D
+        case detectedJointCount
         case fingerTips2D
         case depthSample2D
         case rawImageNorm
@@ -485,6 +500,11 @@ private struct TouchTestDebug: Encodable {
         try container.encodeOptionalAsNull(indexTip3D, forKey: .indexTip3D)
         try container.encode(indexTip3DSpace, forKey: .indexTip3DSpace)
         try container.encodeOptionalAsNull(depthMeters, forKey: .depthMeters)
+        try container.encode(handDetectorSource, forKey: .handDetectorSource)
+        try container.encode(handDetectorStatus, forKey: .handDetectorStatus)
+        try container.encodeOptionalAsNull(handDetectorInferenceMs, forKey: .handDetectorInferenceMs)
+        try container.encode(handLandmarks2D, forKey: .handLandmarks2D)
+        try container.encode(detectedJointCount, forKey: .detectedJointCount)
         try container.encode(fingerTips2D, forKey: .fingerTips2D)
         try container.encodeOptionalAsNull(depthSample2D, forKey: .depthSample2D)
         try container.encodeOptionalAsNull(rawImageNorm, forKey: .rawImageNorm)

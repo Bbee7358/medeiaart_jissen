@@ -59,9 +59,24 @@ struct FingerTips2D: Codable, Equatable {
     }
 }
 
+struct HandSkeleton2D: Codable, Equatable {
+    let landmarks: [HandJoint2D?]
+
+    static let empty = HandSkeleton2D(
+        landmarks: Array(repeating: nil, count: MediaPipeHandLandmark.count)
+    )
+
+    var detectedJointCount: Int {
+        landmarks.reduce(0) { count, point in
+            point == nil ? count : count + 1
+        }
+    }
+}
+
 struct HandPoseSnapshot: Equatable {
     let handDetected: Bool
     let wrist: HandJoint2D?
+    let skeleton: HandSkeleton2D
     let fingerTips: FingerTips2D
     let indexTipDepthMeters: Double?
     let indexTip3D: HandJoint3D?
@@ -70,10 +85,14 @@ struct HandPoseSnapshot: Equatable {
     let touch: TouchDetectionResult
     let calibration: BrainCalibration
     let confidence: Double
+    let detectorSource: String
+    let detectorStatus: String
+    let detectorInferenceMs: Double?
 
     static let empty = HandPoseSnapshot(
         handDetected: false,
         wrist: nil,
+        skeleton: .empty,
         fingerTips: FingerTips2D(
             thumbTip: nil,
             indexTip: nil,
@@ -87,7 +106,10 @@ struct HandPoseSnapshot: Equatable {
         depthDebug: nil,
         touch: .empty,
         calibration: .defaults,
-        confidence: 0
+        confidence: 0,
+        detectorSource: "mediapipe",
+        detectorStatus: "not started",
+        detectorInferenceMs: nil
     )
 }
 

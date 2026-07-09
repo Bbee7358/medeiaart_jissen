@@ -22,6 +22,9 @@
 		110000000000000000000013 /* BrainSTLMesh.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000115 /* BrainSTLMesh.swift */; };
 		110000000000000000000014 /* brain_model.stl in Resources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000116 /* brain_model.stl */; };
 		110000000000000000000015 /* BrainSTLProjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000117 /* BrainSTLProjection.swift */; };
+		110000000000000000000016 /* MediaPipeHandLandmarker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000118 /* MediaPipeHandLandmarker.swift */; };
+		110000000000000000000017 /* hand_landmarker.task in Resources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000119 /* hand_landmarker.task */; };
+		6663FCDB8F6DEF8711B1ADCC /* Pods_BrainTouchARSensor.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C8771A0120AB6592CFF4AF45 /* Pods_BrainTouchARSensor.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -42,6 +45,11 @@
 		110000000000000000000115 /* BrainSTLMesh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainSTLMesh.swift; sourceTree = "<group>"; };
 		110000000000000000000116 /* brain_model.stl */ = {isa = PBXFileReference; lastKnownFileType = file; path = brain_model.stl; sourceTree = "<group>"; };
 		110000000000000000000117 /* BrainSTLProjection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainSTLProjection.swift; sourceTree = "<group>"; };
+		110000000000000000000118 /* MediaPipeHandLandmarker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaPipeHandLandmarker.swift; sourceTree = "<group>"; };
+		110000000000000000000119 /* hand_landmarker.task */ = {isa = PBXFileReference; lastKnownFileType = file; path = hand_landmarker.task; sourceTree = "<group>"; };
+		720822EB28293A9EE1BE1CB6 /* Pods-BrainTouchARSensor.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-BrainTouchARSensor.release.xcconfig"; path = "Target Support Files/Pods-BrainTouchARSensor/Pods-BrainTouchARSensor.release.xcconfig"; sourceTree = "<group>"; };
+		97150B32BDEA67AAD2B01E35 /* Pods-BrainTouchARSensor.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-BrainTouchARSensor.debug.xcconfig"; path = "Target Support Files/Pods-BrainTouchARSensor/Pods-BrainTouchARSensor.debug.xcconfig"; sourceTree = "<group>"; };
+		C8771A0120AB6592CFF4AF45 /* Pods_BrainTouchARSensor.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_BrainTouchARSensor.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -49,23 +57,36 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				6663FCDB8F6DEF8711B1ADCC /* Pods_BrainTouchARSensor.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		0103F3DFCBECEA4E194B2275 /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				97150B32BDEA67AAD2B01E35 /* Pods-BrainTouchARSensor.debug.xcconfig */,
+				720822EB28293A9EE1BE1CB6 /* Pods-BrainTouchARSensor.release.xcconfig */,
+			);
+			name = Pods;
+			path = Pods;
+			sourceTree = "<group>";
+		};
 		110000000000000000000301 = {
 			isa = PBXGroup;
 			children = (
-				110000000000000000000302 /* Sources/BrainTouchARSensor */,
+				110000000000000000000302 /* BrainTouchARSensor */,
 				110000000000000000000303 /* Config */,
 				110000000000000000000305 /* Resources */,
 				110000000000000000000304 /* Products */,
+				0103F3DFCBECEA4E194B2275 /* Pods */,
+				F226411D6B595F4C012D549E /* Frameworks */,
 			);
 			sourceTree = "<group>";
 		};
-		110000000000000000000302 /* Sources/BrainTouchARSensor */ = {
+		110000000000000000000302 /* BrainTouchARSensor */ = {
 			isa = PBXGroup;
 			children = (
 				110000000000000000000101 /* BrainTouchARSensorApp.swift */,
@@ -82,6 +103,7 @@
 				110000000000000000000114 /* DepthBrainCalibrator.swift */,
 				110000000000000000000115 /* BrainSTLMesh.swift */,
 				110000000000000000000117 /* BrainSTLProjection.swift */,
+				110000000000000000000118 /* MediaPipeHandLandmarker.swift */,
 			);
 			path = Sources/BrainTouchARSensor;
 			sourceTree = "<group>";
@@ -106,8 +128,17 @@
 			isa = PBXGroup;
 			children = (
 				110000000000000000000116 /* brain_model.stl */,
+				110000000000000000000119 /* hand_landmarker.task */,
 			);
 			path = Resources;
+			sourceTree = "<group>";
+		};
+		F226411D6B595F4C012D549E /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				C8771A0120AB6592CFF4AF45 /* Pods_BrainTouchARSensor.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -117,6 +148,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 110000000000000000000701 /* Build configuration list for PBXNativeTarget "BrainTouchARSensor" */;
 			buildPhases = (
+				D28133A4F9409E9E57D8D29A /* [CP] Check Pods Manifest.lock */,
 				110000000000000000000601 /* Sources */,
 				110000000000000000000201 /* Frameworks */,
 				110000000000000000000602 /* Resources */,
@@ -169,10 +201,36 @@
 			buildActionMask = 2147483647;
 			files = (
 				110000000000000000000014 /* brain_model.stl in Resources */,
+				110000000000000000000017 /* hand_landmarker.task in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		D28133A4F9409E9E57D8D29A /* [CP] Check Pods Manifest.lock */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
+				"${PODS_ROOT}/Manifest.lock",
+			);
+			name = "[CP] Check Pods Manifest.lock";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Pods-BrainTouchARSensor-checkManifestLockResult.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		110000000000000000000601 /* Sources */ = {
@@ -193,6 +251,7 @@
 				110000000000000000000012 /* DepthBrainCalibrator.swift in Sources */,
 				110000000000000000000013 /* BrainSTLMesh.swift in Sources */,
 				110000000000000000000015 /* BrainSTLProjection.swift in Sources */,
+				110000000000000000000016 /* MediaPipeHandLandmarker.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -316,6 +375,7 @@
 		};
 		110000000000000000000803 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 97150B32BDEA67AAD2B01E35 /* Pods-BrainTouchARSensor.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
@@ -343,6 +403,7 @@
 		};
 		110000000000000000000804 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 720822EB28293A9EE1BE1CB6 /* Pods-BrainTouchARSensor.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;

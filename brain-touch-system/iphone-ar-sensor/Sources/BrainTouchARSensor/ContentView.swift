@@ -18,6 +18,10 @@ struct ContentView: View {
                     DebugRow(label: "depth", value: sessionModel.depthStatus)
                     DebugRow(label: "current FPS", value: sessionModel.fpsText)
                     DebugRow(label: "current timestamp", value: sessionModel.timestampText)
+                    DebugRow(label: "hand detector", value: sessionModel.handDetectorSourceText)
+                    DebugRow(label: "detector status", value: sessionModel.handDetectorStatusText)
+                    DebugRow(label: "detected joints", value: sessionModel.handJointCountText)
+                    DebugRow(label: "hand inference", value: sessionModel.handInferenceText)
                     DebugRow(label: "handDetected", value: sessionModel.handDetectedText)
                     DebugRow(label: "indexTip normalized x", value: sessionModel.indexTipXText)
                     DebugRow(label: "indexTip normalized y", value: sessionModel.indexTipYText)
@@ -272,6 +276,9 @@ struct ContentView: View {
             STLProjectionOverlay(snapshot: sessionModel.stlProjectionOverlay)
                 .ignoresSafeArea()
 
+            HandSkeletonOverlay(skeleton: sessionModel.handPose.skeleton)
+                .ignoresSafeArea()
+
             FingerTipOverlay(point: sessionModel.handPose.fingerTips.indexTip)
                 .ignoresSafeArea()
 
@@ -379,6 +386,72 @@ private struct STLProjectionOverlay: View {
             .frame(width: proxy.size.width, height: proxy.size.height)
         }
         .allowsHitTesting(false)
+    }
+}
+
+private struct HandSkeletonOverlay: View {
+    let skeleton: HandSkeleton2D
+
+    var body: some View {
+        GeometryReader { proxy in
+            Canvas { context, size in
+                guard skeleton.detectedJointCount > 0 else { return }
+
+                var linePath = Path()
+                for connection in MediaPipeHandConnections.pairs {
+                    guard let start = point(at: connection.0, size: size),
+                          let end = point(at: connection.1, size: size) else {
+                        continue
+                    }
+                    linePath.move(to: start)
+                    linePath.addLine(to: end)
+                }
+                context.stroke(
+                    linePath,
+                    with: .color(.mint.opacity(0.88)),
+                    style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round)
+                )
+
+                for (index, landmark) in skeleton.landmarks.enumerated() {
+                    guard let landmark else { continue }
+                    let center = CGPoint(
+                        x: min(max(landmark.x, 0), 1) * size.width,
+                        y: min(max(landmark.y, 0), 1) * size.height
+                    )
+                    let isFingerTip = [4, 8, 12, 16, 20].contains(index)
+                    let diameter = isFingerTip ? 18.0 : 12.0
+                    let rect = CGRect(
+                        x: center.x - diameter / 2,
+                        y: center.y - diameter / 2,
+                        width: diameter,
+                        height: diameter
+                    )
+                    context.fill(
+                        Path(ellipseIn: rect),
+                        with: .color(isFingerTip ? .yellow.opacity(0.95) : .cyan.opacity(0.92))
+                    )
+                    context.stroke(
+                        Path(ellipseIn: rect),
+                        with: .color(.black.opacity(0.72)),
+                        lineWidth: 2
+                    )
+                }
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func point(at index: Int, size: CGSize) -> CGPoint? {
+        guard skeleton.landmarks.indices.contains(index),
+              let landmark = skeleton.landmarks[index] else {
+            return nil
+        }
+
+        return CGPoint(
+            x: min(max(landmark.x, 0), 1) * size.width,
+            y: min(max(landmark.y, 0), 1) * size.height
+        )
     }
 }
 
