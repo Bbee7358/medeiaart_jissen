@@ -74,7 +74,9 @@ struct ContentView: View {
                     DebugRow(label: "depth calibration", value: sessionModel.depthCalibrationStatusText)
                     DebugRow(label: "depth calib samples", value: sessionModel.depthCalibrationSampleText)
                     DebugRow(label: "depth calib estimate", value: sessionModel.depthCalibrationEstimateText)
-                    DebugRow(label: "detected depth points", value: "\(sessionModel.brainDetectionOverlay.candidateCount)")
+                    DebugRow(label: "raw LiDAR depth points", value: "\(sessionModel.brainDetectionOverlay.rawDepthCount)")
+                    DebugRow(label: "weak raised points", value: "\(sessionModel.brainDetectionOverlay.weakCandidateCount)")
+                    DebugRow(label: "adopted brain points", value: "\(sessionModel.brainDetectionOverlay.candidateCount)")
                     DebugRow(label: "depth overlay map", value: sessionModel.brainDetectionOverlay.mapping)
 
                     CalibrationStepper(
@@ -284,24 +286,31 @@ private struct BrainDepthDetectionOverlay: View {
     var body: some View {
         GeometryReader { proxy in
             Canvas { context, size in
-                guard snapshot.candidateCount > 0 else { return }
+                guard snapshot.rawDepthCount > 0 || snapshot.candidateCount > 0 else { return }
 
-                let pointSize = max(2.0, min(size.width, size.height) * 0.006)
-                let pointsPath = Path { path in
-                    for point in snapshot.points {
-                        let center = CGPoint(
-                            x: point.x * size.width,
-                            y: point.y * size.height
-                        )
-                        path.addEllipse(in: CGRect(
-                            x: center.x - pointSize / 2,
-                            y: center.y - pointSize / 2,
-                            width: pointSize,
-                            height: pointSize
-                        ))
-                    }
-                }
-                context.fill(pointsPath, with: .color(.cyan.opacity(0.72)))
+                drawPoints(
+                    snapshot.rawDepthPoints,
+                    color: .white.opacity(0.22),
+                    pointSize: max(1.0, min(size.width, size.height) * 0.003),
+                    context: context,
+                    size: size
+                )
+                drawPoints(
+                    snapshot.weakPoints,
+                    color: .orange.opacity(0.42),
+                    pointSize: max(1.6, min(size.width, size.height) * 0.0045),
+                    context: context,
+                    size: size
+                )
+                drawPoints(
+                    snapshot.points,
+                    color: .cyan.opacity(0.76),
+                    pointSize: max(2.0, min(size.width, size.height) * 0.006),
+                    context: context,
+                    size: size
+                )
+
+                guard snapshot.candidateCount > 0 else { return }
 
                 let minPoint = CGPoint(
                     x: snapshot.boundsMin.x * size.width,
@@ -337,6 +346,30 @@ private struct BrainDepthDetectionOverlay: View {
             .frame(width: proxy.size.width, height: proxy.size.height)
         }
         .allowsHitTesting(false)
+    }
+
+    private func drawPoints(
+        _ points: [HandJoint2D],
+        color: Color,
+        pointSize: Double,
+        context: GraphicsContext,
+        size: CGSize
+    ) {
+        let path = Path { path in
+            for point in points {
+                let center = CGPoint(
+                    x: point.x * size.width,
+                    y: point.y * size.height
+                )
+                path.addEllipse(in: CGRect(
+                    x: center.x - pointSize / 2,
+                    y: center.y - pointSize / 2,
+                    width: pointSize,
+                    height: pointSize
+                ))
+            }
+        }
+        context.fill(path, with: .color(color))
     }
 }
 

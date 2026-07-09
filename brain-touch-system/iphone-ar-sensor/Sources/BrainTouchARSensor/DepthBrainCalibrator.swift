@@ -48,20 +48,30 @@ struct DepthBrainCalibrationEstimate {
 }
 
 struct BrainDepthDetectionOverlaySnapshot: Equatable {
+    let rawDepthPoints: [HandJoint2D]
+    let weakPoints: [HandJoint2D]
     let points: [HandJoint2D]
     let centroid: HandJoint2D
     let boundsMin: HandJoint2D
     let boundsMax: HandJoint2D
     let depthMapSize: PixelSize
+    let rawDepthCount: Int
+    let baselineValidCount: Int
+    let weakCandidateCount: Int
     let candidateCount: Int
     let mapping: String
 
     static let empty = BrainDepthDetectionOverlaySnapshot(
+        rawDepthPoints: [],
+        weakPoints: [],
         points: [],
         centroid: HandJoint2D(x: 0.5, y: 0.5),
         boundsMin: HandJoint2D(x: 0.5, y: 0.5),
         boundsMax: HandJoint2D(x: 0.5, y: 0.5),
         depthMapSize: PixelSize(w: 0, h: 0),
+        rawDepthCount: 0,
+        baselineValidCount: 0,
+        weakCandidateCount: 0,
         candidateCount: 0,
         mapping: "none"
     )
@@ -132,13 +142,7 @@ enum DepthBrainCalibrator {
         )
 
         CVPixelBufferLockBaseAddress(depthMap, .readOnly)
-        if let confidenceMap = depthData.confidenceMap {
-            CVPixelBufferLockBaseAddress(confidenceMap, .readOnly)
-        }
         defer {
-            if let confidenceMap = depthData.confidenceMap {
-                CVPixelBufferUnlockBaseAddress(confidenceMap, .readOnly)
-            }
             CVPixelBufferUnlockBaseAddress(depthMap, .readOnly)
         }
 
@@ -147,16 +151,9 @@ enum DepthBrainCalibrator {
         }
 
         let depthBytesPerRow = CVPixelBufferGetBytesPerRow(depthMap)
-        let confidenceReader = makeConfidenceReader(
-            confidenceMap: depthData.confidenceMap,
-            depthWidth: width,
-            depthHeight: height
-        )
-
         var provisionalSamples: [Float] = []
         for y in 0..<height {
             for x in 0..<width where isInsideCircle(x: x, y: y, centerX: centerX, centerY: centerY, radius: provisionalRadius) {
-                guard confidenceReader.isUsable(x, y) else { continue }
                 let depth = readDepth(
                     depthBaseAddress: depthBaseAddress,
                     bytesPerRow: depthBytesPerRow,
@@ -184,7 +181,6 @@ enum DepthBrainCalibrator {
         var baselineSamples: [Float] = []
         for y in 0..<height {
             for x in 0..<width where isInsideCircle(x: x, y: y, centerX: centerX, centerY: centerY, radius: radiusPixels) {
-                guard confidenceReader.isUsable(x, y) else { continue }
                 let depth = readDepth(
                     depthBaseAddress: depthBaseAddress,
                     bytesPerRow: depthBytesPerRow,
@@ -272,7 +268,11 @@ enum DepthBrainCalibrator {
         var baselineSamples: [Float] = []
         var xSamples: [Int] = []
         var ySamples: [Int] = []
+        var rawDepthPixels: [PixelPoint] = []
+        var weakPixels: [PixelPoint] = []
         var candidatePixels: [PixelPoint] = []
+        var baselineValidCount = 0
+        var rawDepthCount = 0
         var weakCandidateCount = 0
         var medianCandidateCount = 0
         var leftCandidateCount = 0
@@ -287,6 +287,7 @@ enum DepthBrainCalibrator {
                 guard isValidDepth(baselineDepth) else {
                     continue
                 }
+                baselineValidCount += 1
 
                 let currentDepth = readDepth(
                     depthBaseAddress: depthBaseAddress,
@@ -295,12 +296,15 @@ enum DepthBrainCalibrator {
                     y: y
                 )
                 guard isValidDepth(currentDepth) else { continue }
+                rawDepthCount += 1
+                rawDepthPixels.append(PixelPoint(x: x, y: y))
 
                 let delta = baselineDepth - currentDepth
                 let medianDelta = Float(baseline.medianDepthMeters) - currentDepth
                 if max(delta, medianDelta) >= weakMinHeight,
                    max(delta, medianDelta) <= maxReasonableHeight {
                     weakCandidateCount += 1
+                    weakPixels.append(PixelPoint(x: x, y: y))
                 }
                 if medianDelta >= minHeight,
                    medianDelta <= maxReasonableHeight {
@@ -343,11 +347,16 @@ enum DepthBrainCalibrator {
         let centroidY = sumY / Double(currentSamples.count)
         let bounds = robustBounds(xSamples: xSamples, ySamples: ySamples)
         let overlay = makeOverlay(
+            rawDepthPixels: rawDepthPixels,
+            weakPixels: weakPixels,
             candidatePixels: candidatePixels,
             centroidX: centroidX,
             centroidY: centroidY,
             bounds: bounds,
-            depthMapSize: actualSize
+            depthMapSize: actualSize,
+            rawDepthCount: rawDepthCount,
+            baselineValidCount: baselineValidCount,
+            weakCandidateCount: weakCandidateCount
         )
         let cameraSpaceCenter = PointUnprojector.unprojectPoint(
             pixelX: Float(centroidX),
@@ -405,24 +414,6 @@ enum DepthBrainCalibrator {
 
         let radius = minFocalLength * workingRadiusMeters / referenceDepthMeters
         return clamp(radius, min: 8, max: minDimension * maxRadiusRatio)
-    }
-
-    private static func makeConfidenceReader(
-        confidenceMap: CVPixelBuffer?,
-        depthWidth: Int,
-        depthHeight: Int
-    ) -> DepthConfidenceReader {
-        guard let confidenceMap,
-              CVPixelBufferGetWidth(confidenceMap) == depthWidth,
-              CVPixelBufferGetHeight(confidenceMap) == depthHeight,
-              let baseAddress = CVPixelBufferGetBaseAddress(confidenceMap) else {
-            return DepthConfidenceReader(baseAddress: nil, bytesPerRow: 0)
-        }
-
-        return DepthConfidenceReader(
-            baseAddress: baseAddress,
-            bytesPerRow: CVPixelBufferGetBytesPerRow(confidenceMap)
-        )
     }
 
     private static func readDepth(
@@ -484,24 +475,24 @@ enum DepthBrainCalibrator {
     }
 
     private static func makeOverlay(
+        rawDepthPixels: [PixelPoint],
+        weakPixels: [PixelPoint],
         candidatePixels: [PixelPoint],
         centroidX: Double,
         centroidY: Double,
         bounds: DepthCalibrationBounds,
-        depthMapSize: PixelSize
+        depthMapSize: PixelSize,
+        rawDepthCount: Int,
+        baselineValidCount: Int,
+        weakCandidateCount: Int
     ) -> BrainDepthDetectionOverlaySnapshot {
-        let maxPointCount = 900
-        let step = max(1, candidatePixels.count / maxPointCount)
-        let points = candidatePixels.enumerated().compactMap { index, pixel -> HandJoint2D? in
-            guard index % step == 0 else { return nil }
-            return depthPixelToDisplayPoint(
-                x: Double(pixel.x),
-                y: Double(pixel.y),
-                depthMapSize: depthMapSize
-            )
-        }
+        let rawPoints = displayPoints(from: rawDepthPixels, maxPointCount: 900, depthMapSize: depthMapSize)
+        let weakPoints = displayPoints(from: weakPixels, maxPointCount: 900, depthMapSize: depthMapSize)
+        let points = displayPoints(from: candidatePixels, maxPointCount: 900, depthMapSize: depthMapSize)
 
         return BrainDepthDetectionOverlaySnapshot(
+            rawDepthPoints: rawPoints,
+            weakPoints: weakPoints,
             points: points,
             centroid: depthPixelToDisplayPoint(
                 x: centroidX,
@@ -519,9 +510,29 @@ enum DepthBrainCalibrator {
                 depthMapSize: depthMapSize
             ),
             depthMapSize: depthMapSize,
+            rawDepthCount: rawDepthCount,
+            baselineValidCount: baselineValidCount,
+            weakCandidateCount: weakCandidateCount,
             candidateCount: candidatePixels.count,
             mapping: "portrait_back_raw_to_display"
         )
+    }
+
+    private static func displayPoints(
+        from pixels: [PixelPoint],
+        maxPointCount: Int,
+        depthMapSize: PixelSize
+    ) -> [HandJoint2D] {
+        guard !pixels.isEmpty else { return [] }
+        let step = max(1, pixels.count / maxPointCount)
+        return pixels.enumerated().compactMap { index, pixel -> HandJoint2D? in
+            guard index % step == 0 else { return nil }
+            return depthPixelToDisplayPoint(
+                x: Double(pixel.x),
+                y: Double(pixel.y),
+                depthMapSize: depthMapSize
+            )
+        }
     }
 
     private static func depthPixelToDisplayPoint(
@@ -545,19 +556,5 @@ enum DepthBrainCalibrator {
 
     private static func clamp(_ value: Double, min minValue: Double, max maxValue: Double) -> Double {
         Swift.max(minValue, Swift.min(maxValue, value))
-    }
-}
-
-private struct DepthConfidenceReader {
-    let baseAddress: UnsafeMutableRawPointer?
-    let bytesPerRow: Int
-
-    func isUsable(_ x: Int, _ y: Int) -> Bool {
-        guard let baseAddress else {
-            return true
-        }
-
-        let row = baseAddress.advanced(by: y * bytesPerRow)
-        return row.assumingMemoryBound(to: UInt8.self)[x] > 0
     }
 }
