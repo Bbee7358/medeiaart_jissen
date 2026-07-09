@@ -252,6 +252,7 @@ private extension ARSessionModel {
                 next.widthMeters = estimate.widthMeters
                 next.depthMeters = estimate.depthMeters
                 next.heightMeters = estimate.heightMeters
+                next.meshRealWidthMeters = estimate.widthMeters
                 applyCalibration(next, save: true)
                 brainDetectionOverlay = estimate.overlay
 

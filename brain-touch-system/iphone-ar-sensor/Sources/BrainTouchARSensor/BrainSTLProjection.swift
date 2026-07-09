@@ -78,7 +78,7 @@ enum BrainSTLProjector {
             boundsMax: HandJoint2D(x: maxX, y: maxY),
             projectedPointCount: points.count,
             sourceSampleCount: metadata.sampleVerticesRaw.count,
-            mapping: "stl_raw_xz_y_to_world_xzy_portrait"
+            mapping: "stl_world_to_raw_camera_to_display"
         )
     }
 
@@ -96,23 +96,38 @@ enum BrainSTLProjector {
         // ARKit camera space looks along -Z. Points with z >= 0 are behind the camera.
         guard cameraPoint4.z < -0.001 else { return nil }
 
-        let projected = camera.projectPoint(
-            worldPoint,
-            orientation: .portrait,
-            viewportSize: CGSize(width: 1, height: 1)
-        )
-        guard projected.x.isFinite,
-              projected.y.isFinite,
-              projected.x >= -0.5,
-              projected.x <= 1.5,
-              projected.y >= -0.5,
-              projected.y <= 1.5 else {
+        let intrinsics = camera.intrinsics
+        let fx = intrinsics.columns.0.x
+        let fy = intrinsics.columns.1.y
+        let cx = intrinsics.columns.2.x
+        let cy = intrinsics.columns.2.y
+        let imageResolution = camera.imageResolution
+        guard fx > 0,
+              fy > 0,
+              imageResolution.width > 0,
+              imageResolution.height > 0 else {
             return nil
         }
 
+        let positiveDepth = -cameraPoint4.z
+        let rawX = (cameraPoint4.x * fx / positiveDepth + cx) / Float(imageResolution.width)
+        let rawY = (cameraPoint4.y * fy / positiveDepth + cy) / Float(imageResolution.height)
+        guard rawX.isFinite,
+              rawY.isFinite,
+              rawX >= -0.5,
+              rawX <= 1.5,
+              rawY >= -0.5,
+              rawY <= 1.5 else {
+            return nil
+        }
+
+        // Match DepthBrainCalibrator.depthPixelToDisplayPoint(_:). The LiDAR
+        // debug overlay already proved this portrait/back-camera raw->display
+        // mapping against the physical model, so STL projection should use the
+        // same route instead of ARCamera.projectPoint(.portrait).
         return HandJoint2D(
-            x: min(max(Double(projected.x), 0), 1),
-            y: min(max(Double(projected.y), 0), 1)
+            x: min(max(1.0 - Double(rawY), 0), 1),
+            y: min(max(Double(rawX), 0), 1)
         )
     }
 }
