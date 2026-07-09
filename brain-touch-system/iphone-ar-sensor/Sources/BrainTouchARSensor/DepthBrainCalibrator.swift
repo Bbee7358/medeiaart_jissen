@@ -269,23 +269,18 @@ enum DepthBrainCalibrator {
         let weakMinHeight = Float(0.004)
         let maxReasonableHeight: Float = 0.60
 
-        var currentSamples: [Float] = []
-        var baselineSamples: [Float] = []
-        var xSamples: [Int] = []
-        var ySamples: [Int] = []
+        let sideExpansionMinHeight: Float = 0.002
+        var currentDepths = Array(repeating: Float.nan, count: width * height)
+        var strongPixels: [PixelPoint] = []
+        var expandableMask = Array(repeating: false, count: width * height)
         var rawDepthPixels: [PixelPoint] = []
         var raisedPixels: [(pixel: PixelPoint, height: Float)] = []
         var weakPixels: [PixelPoint] = []
-        var candidatePixels: [PixelPoint] = []
         var baselineValidCount = 0
         var rawDepthCount = 0
         var lowRaisedCount = 0
         var weakCandidateCount = 0
         var medianCandidateCount = 0
-        var leftCandidateCount = 0
-        var rightCandidateCount = 0
-        var sumX = 0.0
-        var sumY = 0.0
 
         for y in 0..<height {
             for x in 0..<width {
@@ -303,6 +298,7 @@ enum DepthBrainCalibrator {
                     y: y
                 )
                 guard isValidDepth(currentDepth) else { continue }
+                currentDepths[index] = currentDepth
                 rawDepthCount += 1
                 rawDepthPixels.append(PixelPoint(x: x, y: y))
 
@@ -313,6 +309,10 @@ enum DepthBrainCalibrator {
                    selectedDelta <= maxReasonableHeight {
                     lowRaisedCount += 1
                     raisedPixels.append((pixel: PixelPoint(x: x, y: y), height: selectedDelta))
+                }
+                if selectedDelta >= sideExpansionMinHeight,
+                   selectedDelta <= maxReasonableHeight {
+                    expandableMask[index] = true
                 }
                 if selectedDelta >= weakMinHeight,
                    selectedDelta <= maxReasonableHeight {
@@ -329,23 +329,66 @@ enum DepthBrainCalibrator {
                     continue
                 }
 
-                currentSamples.append(currentDepth)
-                baselineSamples.append(baselineDepth)
-                xSamples.append(x)
-                ySamples.append(y)
-                candidatePixels.append(PixelPoint(x: x, y: y))
-                if x < width / 2 {
-                    leftCandidateCount += 1
-                } else {
-                    rightCandidateCount += 1
-                }
-                sumX += Double(x)
-                sumY += Double(y)
+                strongPixels.append(PixelPoint(x: x, y: y))
             }
+        }
+
+        guard strongPixels.count >= minCandidateSamples else {
+            throw DepthBrainCalibrationError.noBrainCandidate(sampleCount: strongPixels.count)
+        }
+
+        let strongBounds = robustBounds(
+            xSamples: strongPixels.map(\.x),
+            ySamples: strongPixels.map(\.y)
+        )
+        let allowedBounds = expandedBounds(
+            from: strongBounds,
+            depthMapSize: actualSize
+        )
+        let candidatePixels = connectedObjectPixels(
+            seeds: strongPixels,
+            expandableMask: expandableMask,
+            depthMapSize: actualSize,
+            allowedBounds: allowedBounds
+        )
+
+        var currentSamples: [Float] = []
+        var baselineSamples: [Float] = []
+        var xSamples: [Int] = []
+        var ySamples: [Int] = []
+        var leftCandidateCount = 0
+        var rightCandidateCount = 0
+        var sumX = 0.0
+        var sumY = 0.0
+        for pixel in candidatePixels {
+            let index = pixel.y * width + pixel.x
+            let currentDepth = currentDepths[index]
+            let baselineDepth = baseline.depths[index]
+            guard isValidDepth(currentDepth), isValidDepth(baselineDepth) else {
+                continue
+            }
+
+            currentSamples.append(currentDepth)
+            baselineSamples.append(baselineDepth)
+            xSamples.append(pixel.x)
+            ySamples.append(pixel.y)
+            if pixel.x < width / 2 {
+                leftCandidateCount += 1
+            } else {
+                rightCandidateCount += 1
+            }
+            sumX += Double(pixel.x)
+            sumY += Double(pixel.y)
+        }
+
+        let strongCurrentSamples = strongPixels.compactMap { pixel -> Float? in
+            let depth = currentDepths[pixel.y * width + pixel.x]
+            return isValidDepth(depth) ? depth : nil
         }
 
         guard currentSamples.count >= minCandidateSamples,
               let objectMedianDepth = median(currentSamples),
+              let topMedianDepth = median(strongCurrentSamples),
               let baselineMedianDepth = median(baselineSamples) else {
             throw DepthBrainCalibrationError.noBrainCandidate(sampleCount: currentSamples.count)
         }
@@ -385,7 +428,7 @@ enum DepthBrainCalibrator {
             1
         )
 
-        let topDepth = Double(objectMedianDepth)
+        let topDepth = Double(topMedianDepth)
         let widthMeters = Double(Float(bounds.widthPixels) * Float(topDepth) / fx)
         let depthMeters = Double(Float(bounds.heightPixels) * Float(topDepth) / fy)
 
@@ -478,6 +521,85 @@ enum DepthBrainCalibrator {
             maxX: max(minX, maxX),
             maxY: max(minY, maxY)
         )
+    }
+
+    private static func expandedBounds(
+        from bounds: DepthCalibrationBounds,
+        depthMapSize: PixelSize
+    ) -> DepthCalibrationBounds {
+        let xMargin = max(12, Int(round(Double(bounds.widthPixels) * 0.85)))
+        let yMargin = max(12, Int(round(Double(bounds.heightPixels) * 0.85)))
+        return DepthCalibrationBounds(
+            minX: max(0, bounds.minX - xMargin),
+            minY: max(0, bounds.minY - yMargin),
+            maxX: min(depthMapSize.w - 1, bounds.maxX + xMargin),
+            maxY: min(depthMapSize.h - 1, bounds.maxY + yMargin)
+        )
+    }
+
+    private static func connectedObjectPixels(
+        seeds: [PixelPoint],
+        expandableMask: [Bool],
+        depthMapSize: PixelSize,
+        allowedBounds: DepthCalibrationBounds
+    ) -> [PixelPoint] {
+        guard !seeds.isEmpty else { return [] }
+
+        let width = depthMapSize.w
+        let height = depthMapSize.h
+        var visited = Array(repeating: false, count: width * height)
+        var queue: [PixelPoint] = []
+        queue.reserveCapacity(seeds.count)
+
+        for seed in seeds where isInside(seed, bounds: allowedBounds) {
+            let index = seed.y * width + seed.x
+            guard expandableMask.indices.contains(index),
+                  expandableMask[index],
+                  !visited[index] else {
+                continue
+            }
+
+            visited[index] = true
+            queue.append(seed)
+        }
+
+        var head = 0
+        while head < queue.count {
+            let pixel = queue[head]
+            head += 1
+
+            for dy in -1...1 {
+                for dx in -1...1 {
+                    if dx == 0 && dy == 0 { continue }
+
+                    let next = PixelPoint(x: pixel.x + dx, y: pixel.y + dy)
+                    guard next.x >= 0,
+                          next.x < width,
+                          next.y >= 0,
+                          next.y < height,
+                          isInside(next, bounds: allowedBounds) else {
+                        continue
+                    }
+
+                    let index = next.y * width + next.x
+                    guard expandableMask[index], !visited[index] else {
+                        continue
+                    }
+
+                    visited[index] = true
+                    queue.append(next)
+                }
+            }
+        }
+
+        return queue
+    }
+
+    private static func isInside(_ pixel: PixelPoint, bounds: DepthCalibrationBounds) -> Bool {
+        pixel.x >= bounds.minX &&
+            pixel.x <= bounds.maxX &&
+            pixel.y >= bounds.minY &&
+            pixel.y <= bounds.maxY
     }
 
     private static func percentile(_ values: [Int], ratio: Double) -> Int? {
