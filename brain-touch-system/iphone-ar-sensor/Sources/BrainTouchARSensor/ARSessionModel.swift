@@ -38,6 +38,8 @@ final class ARSessionModel: NSObject, ObservableObject {
     @Published var stlScaledSizeText = "-"
     @Published var stlProjectionText = "-"
     @Published var stlProjectionOverlay = STLProjectionOverlaySnapshot.empty
+    @Published var stlNearestDistanceText = "-"
+    @Published var stlNearestSurfaceText = "-"
 
     private var lastFrameTimestamp: TimeInterval?
     private var lastHandPoseTimestamp: TimeInterval = 0
@@ -308,6 +310,7 @@ private extension ARSessionModel {
             guard let observation = request.results?.first else {
                 indexTip3DSmoother.reset()
                 _ = touchDetector.update(indexTip3D: nil, hasDepth: false, timestamp: timestamp)
+                updateSTLNearestDebug(indexTip3D: nil)
                 updateHandPose(makeEmptySnapshot())
                 return
             }
@@ -323,6 +326,7 @@ private extension ARSessionModel {
         } catch {
             indexTip3DSmoother.reset()
             _ = touchDetector.update(indexTip3D: nil, hasDepth: false, timestamp: timestamp)
+            updateSTLNearestDebug(indexTip3D: nil)
             updateHandPose(makeEmptySnapshot())
         }
     }
@@ -386,6 +390,7 @@ private extension ARSessionModel {
             camera: camera
         )
         let smoothedIndexTip3D = indexTip3DSmoother.append(rawIndexTip3D)
+        updateSTLNearestDebug(indexTip3D: smoothedIndexTip3D)
         let touch = touchDetector.update(
             indexTip3D: smoothedIndexTip3D,
             hasDepth: depthSample != nil,
@@ -505,6 +510,8 @@ private extension ARSessionModel {
             stlScaledSizeText = "-"
             stlProjectionText = "-"
             stlProjectionOverlay = .empty
+            stlNearestDistanceText = "-"
+            stlNearestSurfaceText = "-"
             return
         }
 
@@ -555,6 +562,32 @@ private extension ARSessionModel {
             overlay.projectedPointCount,
             overlay.sourceSampleCount,
             overlay.mapping
+        )
+    }
+
+    func updateSTLNearestDebug(indexTip3D: HandJoint3D?) {
+        guard let metadata = brainSTLMetadata,
+              let indexTip3D else {
+            stlNearestDistanceText = "-"
+            stlNearestSurfaceText = "-"
+            return
+        }
+
+        let surfaceModel = SampledBrainSTLSurfaceModel(
+            metadata: metadata,
+            calibration: calibration
+        )
+        guard let hit = surfaceModel.nearestSurfaceHit(to: indexTip3D) else {
+            stlNearestDistanceText = "-"
+            stlNearestSurfaceText = "-"
+            return
+        }
+
+        stlNearestDistanceText = String(format: "%.1fmm", hit.distanceMeters * 1000)
+        stlNearestSurfaceText = String(
+            format: "%@, conf %.2f",
+            hit.surfaceLabel,
+            hit.confidence
         )
     }
 }

@@ -88,6 +88,8 @@ struct ContentView: View {
                     DebugRow(label: "stl scale", value: sessionModel.stlScaleText)
                     DebugRow(label: "stl world size", value: sessionModel.stlScaledSizeText)
                     DebugRow(label: "stl projection", value: sessionModel.stlProjectionText)
+                    DebugRow(label: "stl nearest distance", value: sessionModel.stlNearestDistanceText)
+                    DebugRow(label: "stl nearest surface", value: sessionModel.stlNearestSurfaceText)
 
                     CalibrationStepper(
                         label: "brain center x",
