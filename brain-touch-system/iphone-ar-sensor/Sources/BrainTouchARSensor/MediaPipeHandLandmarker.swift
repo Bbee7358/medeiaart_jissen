@@ -162,19 +162,21 @@ final class MediaPipeHandLandmarker {
     #if canImport(MediaPipeTasksVision)
     private func makePortraitBackCameraUIImage(from pixelBuffer: CVPixelBuffer) -> UIImage? {
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-        guard let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent) else {
+        let portraitImage = ciImage.oriented(.right)
+        guard let cgImage = ciContext.createCGImage(portraitImage, from: portraitImage.extent) else {
             return nil
         }
 
-        return UIImage(cgImage: cgImage, scale: 1, orientation: .right)
+        return UIImage(cgImage: cgImage, scale: 1, orientation: .up)
     }
 
     private static func normalizedLandmarkToDisplayPoint(_ landmark: NormalizedLandmark) -> HandJoint2D {
-        // MediaPipe sample apps map .right camera frames with x = 1 - y, y = x.
-        // This matches the portrait back-camera preview used by the AR debug view.
+        // The pixel buffer is physically rendered into portrait orientation before
+        // MediaPipe sees it, so the landmarks are already portrait image coordinates.
+        // SwiftUI overlays apply the ARView aspect-fill crop separately.
         HandJoint2D(
-            x: min(max(1.0 - Double(landmark.y), 0), 1),
-            y: min(max(Double(landmark.x), 0), 1)
+            x: min(max(Double(landmark.x), 0), 1),
+            y: min(max(Double(landmark.y), 0), 1)
         )
     }
     #endif

@@ -391,6 +391,7 @@ private struct STLProjectionOverlay: View {
 
 private struct HandSkeletonOverlay: View {
     let skeleton: HandSkeleton2D
+    private let portraitCameraImageSize = CGSize(width: 1440, height: 1920)
 
     var body: some View {
         GeometryReader { proxy in
@@ -414,9 +415,10 @@ private struct HandSkeletonOverlay: View {
 
                 for (index, landmark) in skeleton.landmarks.enumerated() {
                     guard let landmark else { continue }
-                    let center = CGPoint(
-                        x: min(max(landmark.x, 0), 1) * size.width,
-                        y: min(max(landmark.y, 0), 1) * size.height
+                    let center = CameraPreviewProjection.aspectFillPoint(
+                        landmark,
+                        in: size,
+                        imageSize: portraitCameraImageSize
                     )
                     let isFingerTip = [4, 8, 12, 16, 20].contains(index)
                     let diameter = isFingerTip ? 18.0 : 12.0
@@ -448,9 +450,39 @@ private struct HandSkeletonOverlay: View {
             return nil
         }
 
+        return CameraPreviewProjection.aspectFillPoint(
+            landmark,
+            in: size,
+            imageSize: portraitCameraImageSize
+        )
+    }
+}
+
+private enum CameraPreviewProjection {
+    static func aspectFillPoint(
+        _ normalizedPoint: HandJoint2D,
+        in viewSize: CGSize,
+        imageSize: CGSize
+    ) -> CGPoint {
+        guard viewSize.width > 0,
+              viewSize.height > 0,
+              imageSize.width > 0,
+              imageSize.height > 0 else {
+            return CGPoint(
+                x: min(max(normalizedPoint.x, 0), 1) * viewSize.width,
+                y: min(max(normalizedPoint.y, 0), 1) * viewSize.height
+            )
+        }
+
+        let scale = max(viewSize.width / imageSize.width, viewSize.height / imageSize.height)
+        let scaledWidth = imageSize.width * scale
+        let scaledHeight = imageSize.height * scale
+        let offsetX = (viewSize.width - scaledWidth) / 2
+        let offsetY = (viewSize.height - scaledHeight) / 2
+
         return CGPoint(
-            x: min(max(landmark.x, 0), 1) * size.width,
-            y: min(max(landmark.y, 0), 1) * size.height
+            x: offsetX + min(max(normalizedPoint.x, 0), 1) * scaledWidth,
+            y: offsetY + min(max(normalizedPoint.y, 0), 1) * scaledHeight
         )
     }
 }
@@ -652,10 +684,17 @@ private struct CalibrationStepper: View {
 
 private struct FingerTipOverlay: View {
     let point: HandJoint2D?
+    private let portraitCameraImageSize = CGSize(width: 1440, height: 1920)
 
     var body: some View {
         GeometryReader { geometry in
             if let point {
+                let displayPoint = CameraPreviewProjection.aspectFillPoint(
+                    point,
+                    in: geometry.size,
+                    imageSize: portraitCameraImageSize
+                )
+
                 Circle()
                     .fill(.yellow)
                     .overlay {
@@ -664,10 +703,7 @@ private struct FingerTipOverlay: View {
                     }
                     .frame(width: 28, height: 28)
                     .shadow(color: .yellow.opacity(0.45), radius: 14)
-                    .position(
-                        x: min(max(point.x, 0), 1) * geometry.size.width,
-                        y: min(max(point.y, 0), 1) * geometry.size.height
-                    )
+                    .position(displayPoint)
             }
         }
         .allowsHitTesting(false)
