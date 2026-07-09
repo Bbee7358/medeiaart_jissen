@@ -75,8 +75,10 @@ struct ContentView: View {
                     DebugRow(label: "depth calib samples", value: sessionModel.depthCalibrationSampleText)
                     DebugRow(label: "depth calib estimate", value: sessionModel.depthCalibrationEstimateText)
                     DebugRow(label: "raw LiDAR depth points", value: "\(sessionModel.brainDetectionOverlay.rawDepthCount)")
+                    DebugRow(label: "raised heat points", value: "\(sessionModel.brainDetectionOverlay.lowRaisedCount)")
                     DebugRow(label: "weak raised points", value: "\(sessionModel.brainDetectionOverlay.weakCandidateCount)")
                     DebugRow(label: "adopted brain points", value: "\(sessionModel.brainDetectionOverlay.candidateCount)")
+                    DebugRow(label: "max raised height", value: String(format: "%.1fcm", sessionModel.brainDetectionOverlay.maxRaisedHeightMeters * 100))
                     DebugRow(label: "depth overlay map", value: sessionModel.brainDetectionOverlay.mapping)
 
                     CalibrationStepper(
@@ -290,14 +292,20 @@ private struct BrainDepthDetectionOverlay: View {
 
                 drawPoints(
                     snapshot.rawDepthPoints,
-                    color: .white.opacity(0.22),
-                    pointSize: max(1.0, min(size.width, size.height) * 0.003),
+                    color: .white.opacity(0.10),
+                    pointSize: max(0.8, min(size.width, size.height) * 0.0024),
+                    context: context,
+                    size: size
+                )
+                drawHeatPoints(
+                    snapshot.raisedHeatPoints,
+                    pointSize: max(1.8, min(size.width, size.height) * 0.0048),
                     context: context,
                     size: size
                 )
                 drawPoints(
                     snapshot.weakPoints,
-                    color: .orange.opacity(0.42),
+                    color: .yellow.opacity(0.34),
                     pointSize: max(1.6, min(size.width, size.height) * 0.0045),
                     context: context,
                     size: size
@@ -370,6 +378,33 @@ private struct BrainDepthDetectionOverlay: View {
             }
         }
         context.fill(path, with: .color(color))
+    }
+
+    private func drawHeatPoints(
+        _ points: [DepthDeltaOverlayPoint],
+        pointSize: Double,
+        context: GraphicsContext,
+        size: CGSize
+    ) {
+        for point in points {
+            let normalized = min(1.0, max(0.0, point.heightMeters / 0.10))
+            let color = Color(
+                red: 0.15 + normalized * 0.85,
+                green: 0.25 + normalized * 0.25,
+                blue: 1.0 - normalized * 0.88
+            ).opacity(0.48)
+            let center = CGPoint(
+                x: point.point.x * size.width,
+                y: point.point.y * size.height
+            )
+            let rect = CGRect(
+                x: center.x - pointSize / 2,
+                y: center.y - pointSize / 2,
+                width: pointSize,
+                height: pointSize
+            )
+            context.fill(Path(ellipseIn: rect), with: .color(color))
+        }
     }
 }
 

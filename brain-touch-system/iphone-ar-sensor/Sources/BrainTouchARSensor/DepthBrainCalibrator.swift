@@ -47,8 +47,14 @@ struct DepthBrainCalibrationEstimate {
     let overlay: BrainDepthDetectionOverlaySnapshot
 }
 
+struct DepthDeltaOverlayPoint: Equatable {
+    let point: HandJoint2D
+    let heightMeters: Double
+}
+
 struct BrainDepthDetectionOverlaySnapshot: Equatable {
     let rawDepthPoints: [HandJoint2D]
+    let raisedHeatPoints: [DepthDeltaOverlayPoint]
     let weakPoints: [HandJoint2D]
     let points: [HandJoint2D]
     let centroid: HandJoint2D
@@ -57,12 +63,15 @@ struct BrainDepthDetectionOverlaySnapshot: Equatable {
     let depthMapSize: PixelSize
     let rawDepthCount: Int
     let baselineValidCount: Int
+    let lowRaisedCount: Int
     let weakCandidateCount: Int
     let candidateCount: Int
+    let maxRaisedHeightMeters: Double
     let mapping: String
 
     static let empty = BrainDepthDetectionOverlaySnapshot(
         rawDepthPoints: [],
+        raisedHeatPoints: [],
         weakPoints: [],
         points: [],
         centroid: HandJoint2D(x: 0.5, y: 0.5),
@@ -71,8 +80,10 @@ struct BrainDepthDetectionOverlaySnapshot: Equatable {
         depthMapSize: PixelSize(w: 0, h: 0),
         rawDepthCount: 0,
         baselineValidCount: 0,
+        lowRaisedCount: 0,
         weakCandidateCount: 0,
         candidateCount: 0,
+        maxRaisedHeightMeters: 0,
         mapping: "none"
     )
 }
@@ -245,13 +256,7 @@ enum DepthBrainCalibrator {
         }
 
         CVPixelBufferLockBaseAddress(depthMap, .readOnly)
-        if let confidenceMap = depthData.confidenceMap {
-            CVPixelBufferLockBaseAddress(confidenceMap, .readOnly)
-        }
         defer {
-            if let confidenceMap = depthData.confidenceMap {
-                CVPixelBufferUnlockBaseAddress(confidenceMap, .readOnly)
-            }
             CVPixelBufferUnlockBaseAddress(depthMap, .readOnly)
         }
 
@@ -269,10 +274,12 @@ enum DepthBrainCalibrator {
         var xSamples: [Int] = []
         var ySamples: [Int] = []
         var rawDepthPixels: [PixelPoint] = []
+        var raisedPixels: [(pixel: PixelPoint, height: Float)] = []
         var weakPixels: [PixelPoint] = []
         var candidatePixels: [PixelPoint] = []
         var baselineValidCount = 0
         var rawDepthCount = 0
+        var lowRaisedCount = 0
         var weakCandidateCount = 0
         var medianCandidateCount = 0
         var leftCandidateCount = 0
@@ -301,8 +308,14 @@ enum DepthBrainCalibrator {
 
                 let delta = baselineDepth - currentDepth
                 let medianDelta = Float(baseline.medianDepthMeters) - currentDepth
-                if max(delta, medianDelta) >= weakMinHeight,
-                   max(delta, medianDelta) <= maxReasonableHeight {
+                let selectedDelta = max(delta, medianDelta)
+                if selectedDelta > 0.001,
+                   selectedDelta <= maxReasonableHeight {
+                    lowRaisedCount += 1
+                    raisedPixels.append((pixel: PixelPoint(x: x, y: y), height: selectedDelta))
+                }
+                if selectedDelta >= weakMinHeight,
+                   selectedDelta <= maxReasonableHeight {
                     weakCandidateCount += 1
                     weakPixels.append(PixelPoint(x: x, y: y))
                 }
@@ -311,7 +324,6 @@ enum DepthBrainCalibrator {
                     medianCandidateCount += 1
                 }
 
-                let selectedDelta = max(delta, medianDelta)
                 guard selectedDelta >= minHeight,
                       selectedDelta <= maxReasonableHeight else {
                     continue
@@ -348,6 +360,7 @@ enum DepthBrainCalibrator {
         let bounds = robustBounds(xSamples: xSamples, ySamples: ySamples)
         let overlay = makeOverlay(
             rawDepthPixels: rawDepthPixels,
+            raisedPixels: raisedPixels,
             weakPixels: weakPixels,
             candidatePixels: candidatePixels,
             centroidX: centroidX,
@@ -356,6 +369,7 @@ enum DepthBrainCalibrator {
             depthMapSize: actualSize,
             rawDepthCount: rawDepthCount,
             baselineValidCount: baselineValidCount,
+            lowRaisedCount: lowRaisedCount,
             weakCandidateCount: weakCandidateCount
         )
         let cameraSpaceCenter = PointUnprojector.unprojectPoint(
@@ -476,6 +490,7 @@ enum DepthBrainCalibrator {
 
     private static func makeOverlay(
         rawDepthPixels: [PixelPoint],
+        raisedPixels: [(pixel: PixelPoint, height: Float)],
         weakPixels: [PixelPoint],
         candidatePixels: [PixelPoint],
         centroidX: Double,
@@ -484,14 +499,18 @@ enum DepthBrainCalibrator {
         depthMapSize: PixelSize,
         rawDepthCount: Int,
         baselineValidCount: Int,
+        lowRaisedCount: Int,
         weakCandidateCount: Int
     ) -> BrainDepthDetectionOverlaySnapshot {
         let rawPoints = displayPoints(from: rawDepthPixels, maxPointCount: 900, depthMapSize: depthMapSize)
+        let raisedHeatPoints = heatPoints(from: raisedPixels, maxPointCount: 1200, depthMapSize: depthMapSize)
         let weakPoints = displayPoints(from: weakPixels, maxPointCount: 900, depthMapSize: depthMapSize)
         let points = displayPoints(from: candidatePixels, maxPointCount: 900, depthMapSize: depthMapSize)
+        let maxRaisedHeight = raisedPixels.map(\.height).max() ?? 0
 
         return BrainDepthDetectionOverlaySnapshot(
             rawDepthPoints: rawPoints,
+            raisedHeatPoints: raisedHeatPoints,
             weakPoints: weakPoints,
             points: points,
             centroid: depthPixelToDisplayPoint(
@@ -512,8 +531,10 @@ enum DepthBrainCalibrator {
             depthMapSize: depthMapSize,
             rawDepthCount: rawDepthCount,
             baselineValidCount: baselineValidCount,
+            lowRaisedCount: lowRaisedCount,
             weakCandidateCount: weakCandidateCount,
             candidateCount: candidatePixels.count,
+            maxRaisedHeightMeters: Double(maxRaisedHeight),
             mapping: "portrait_back_raw_to_display"
         )
     }
@@ -531,6 +552,26 @@ enum DepthBrainCalibrator {
                 x: Double(pixel.x),
                 y: Double(pixel.y),
                 depthMapSize: depthMapSize
+            )
+        }
+    }
+
+    private static func heatPoints(
+        from pixels: [(pixel: PixelPoint, height: Float)],
+        maxPointCount: Int,
+        depthMapSize: PixelSize
+    ) -> [DepthDeltaOverlayPoint] {
+        guard !pixels.isEmpty else { return [] }
+        let step = max(1, pixels.count / maxPointCount)
+        return pixels.enumerated().compactMap { index, sample -> DepthDeltaOverlayPoint? in
+            guard index % step == 0 else { return nil }
+            return DepthDeltaOverlayPoint(
+                point: depthPixelToDisplayPoint(
+                    x: Double(sample.pixel.x),
+                    y: Double(sample.pixel.y),
+                    depthMapSize: depthMapSize
+                ),
+                heightMeters: Double(sample.height)
             )
         }
     }
