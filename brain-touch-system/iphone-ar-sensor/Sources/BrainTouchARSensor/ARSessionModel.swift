@@ -247,11 +247,15 @@ private extension ARSessionModel {
                     estimate.baselineDepthMeters
                 )
                 depthCalibrationEstimateText = String(
-                    format: "w %.2fm, d %.2fm, h %.2fm, center %@",
+                    format: "w %.2fm, d %.2fm, h %.2fm, center %@, px %d,%d, box %dx%d",
                     estimate.widthMeters,
                     estimate.depthMeters,
                     estimate.heightMeters,
-                    Self.formatCenter(estimate.centerWorld)
+                    Self.formatCenter(estimate.centerWorld),
+                    estimate.centroidPixel.x,
+                    estimate.centroidPixel.y,
+                    estimate.bounds.widthPixels,
+                    estimate.bounds.heightPixels
                 )
             }
         } catch let error as DepthBrainCalibrationError {

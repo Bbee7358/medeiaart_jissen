@@ -126,11 +126,13 @@ enum PointUnprojector {
             return SIMD3<Float>(0, 0, -depthMeters)
         }
 
-        // Camera space: +X right, +Y up, camera looks along -Z. Vision/depth debug
-        // coordinates are top-left origin, so image Y is flipped into camera +Y.
-        // TODO: Verify this against the final physical iPhone mount orientation.
+        // Camera space used here: +X image right, +Y image down, camera looks along -Z.
+        // ARKit's camera intrinsics are expressed in image pixel coordinates with a
+        // top-left origin, so keeping image Y positive downward prevents vertical
+        // mirroring when depth-map pixels are unprojected back into the AR camera ray.
+        // TODO: Recheck this if the final installation uses a landscape mount.
         let x = (pixelX - cx) * depthMeters / fx
-        let y = -(pixelY - cy) * depthMeters / fy
+        let y = (pixelY - cy) * depthMeters / fy
         let z = -depthMeters
 
         return SIMD3<Float>(x, y, z)
