@@ -337,16 +337,25 @@ enum DepthBrainCalibrator {
             throw DepthBrainCalibrationError.noBrainCandidate(sampleCount: strongPixels.count)
         }
 
+        let centerPixel = PixelPoint(
+            x: Int(round(Double(width - 1) / 2)),
+            y: Int(round(Double(height - 1) / 2))
+        )
+        let centeredStrongPixels = connectedSeedPixelsClosestToCenter(
+            seeds: strongPixels,
+            depthMapSize: actualSize,
+            centerPixel: centerPixel
+        )
         let strongBounds = robustBounds(
-            xSamples: strongPixels.map(\.x),
-            ySamples: strongPixels.map(\.y)
+            xSamples: centeredStrongPixels.map(\.x),
+            ySamples: centeredStrongPixels.map(\.y)
         )
         let allowedBounds = expandedBounds(
             from: strongBounds,
             depthMapSize: actualSize
         )
         let candidatePixels = connectedObjectPixels(
-            seeds: strongPixels,
+            seeds: centeredStrongPixels,
             expandableMask: expandableMask,
             depthMapSize: actualSize,
             allowedBounds: allowedBounds
@@ -381,7 +390,7 @@ enum DepthBrainCalibrator {
             sumY += Double(pixel.y)
         }
 
-        let strongCurrentSamples = strongPixels.compactMap { pixel -> Float? in
+        let strongCurrentSamples = centeredStrongPixels.compactMap { pixel -> Float? in
             let depth = currentDepths[pixel.y * width + pixel.x]
             return isValidDepth(depth) ? depth : nil
         }
@@ -537,6 +546,61 @@ enum DepthBrainCalibrator {
         )
     }
 
+    private static func connectedSeedPixelsClosestToCenter(
+        seeds: [PixelPoint],
+        depthMapSize: PixelSize,
+        centerPixel: PixelPoint
+    ) -> [PixelPoint] {
+        guard !seeds.isEmpty else { return [] }
+
+        let width = depthMapSize.w
+        let height = depthMapSize.h
+        var seedMask = Array(repeating: false, count: width * height)
+        for seed in seeds where seed.x >= 0 && seed.x < width && seed.y >= 0 && seed.y < height {
+            seedMask[seed.y * width + seed.x] = true
+        }
+
+        var visited = Array(repeating: false, count: width * height)
+        var bestComponent: [PixelPoint] = []
+        var bestDistance = Double.greatestFiniteMagnitude
+        var bestCount = 0
+
+        for seed in seeds {
+            let seedIndex = seed.y * width + seed.x
+            guard seedMask.indices.contains(seedIndex),
+                  seedMask[seedIndex],
+                  !visited[seedIndex] else {
+                continue
+            }
+
+            let component = floodFillComponent(
+                start: seed,
+                mask: seedMask,
+                visited: &visited,
+                depthMapSize: depthMapSize
+            )
+            guard component.count >= minCandidateSamples else {
+                continue
+            }
+
+            let centroid = centroid(of: component)
+            let distance = squaredDistance(
+                x0: centroid.x,
+                y0: centroid.y,
+                x1: Double(centerPixel.x),
+                y1: Double(centerPixel.y)
+            )
+            if distance < bestDistance ||
+                (distance == bestDistance && component.count > bestCount) {
+                bestDistance = distance
+                bestCount = component.count
+                bestComponent = component
+            }
+        }
+
+        return bestComponent.isEmpty ? seeds : bestComponent
+    }
+
     private static func connectedObjectPixels(
         seeds: [PixelPoint],
         expandableMask: [Bool],
@@ -593,6 +657,76 @@ enum DepthBrainCalibrator {
         }
 
         return queue
+    }
+
+    private static func floodFillComponent(
+        start: PixelPoint,
+        mask: [Bool],
+        visited: inout [Bool],
+        depthMapSize: PixelSize
+    ) -> [PixelPoint] {
+        let width = depthMapSize.w
+        let height = depthMapSize.h
+        var component: [PixelPoint] = []
+        var queue = [start]
+        visited[start.y * width + start.x] = true
+
+        var head = 0
+        while head < queue.count {
+            let pixel = queue[head]
+            head += 1
+            component.append(pixel)
+
+            for dy in -1...1 {
+                for dx in -1...1 {
+                    if dx == 0 && dy == 0 { continue }
+
+                    let next = PixelPoint(x: pixel.x + dx, y: pixel.y + dy)
+                    guard next.x >= 0,
+                          next.x < width,
+                          next.y >= 0,
+                          next.y < height else {
+                        continue
+                    }
+
+                    let index = next.y * width + next.x
+                    guard mask[index], !visited[index] else {
+                        continue
+                    }
+
+                    visited[index] = true
+                    queue.append(next)
+                }
+            }
+        }
+
+        return component
+    }
+
+    private static func centroid(of pixels: [PixelPoint]) -> (x: Double, y: Double) {
+        guard !pixels.isEmpty else { return (0, 0) }
+
+        let sum = pixels.reduce((x: 0.0, y: 0.0)) { partial, pixel in
+            (
+                x: partial.x + Double(pixel.x),
+                y: partial.y + Double(pixel.y)
+            )
+        }
+        return (
+            x: sum.x / Double(pixels.count),
+            y: sum.y / Double(pixels.count)
+        )
+    }
+
+    private static func squaredDistance(
+        x0: Double,
+        y0: Double,
+        x1: Double,
+        y1: Double
+    ) -> Double {
+        let dx = x0 - x1
+        let dy = y0 - y1
+        return dx * dx + dy * dy
     }
 
     private static func isInside(_ pixel: PixelPoint, bounds: DepthCalibrationBounds) -> Bool {

@@ -417,7 +417,7 @@ private struct DepthDiagnosticBadge: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("DEPTH DEBUG v3")
+            Text("DEPTH DEBUG v4")
                 .font(.caption.weight(.black))
                 .foregroundStyle(.white)
             Text("white raw  purple/red raised  yellow weak  cyan adopted")
