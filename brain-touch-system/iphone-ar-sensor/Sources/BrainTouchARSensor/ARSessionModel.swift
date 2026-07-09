@@ -592,8 +592,9 @@ private extension ARSessionModel {
         if let hit {
             stlNearestDistanceText = String(format: "%.1fmm", hit.distanceMeters * 1000)
             stlNearestSurfaceText = String(
-                format: "%@, conf %.2f",
+                format: "%@ / %@, conf %.2f",
                 hit.surfaceLabel,
+                hit.regionLabel ?? "不明",
                 hit.confidence
             )
             return
@@ -622,8 +623,9 @@ private extension ARSessionModel {
 
         stlNearestDistanceText = String(format: "%.1fmm", hit.distanceMeters * 1000)
         stlNearestSurfaceText = String(
-            format: "%@, conf %.2f",
+            format: "%@ / %@, conf %.2f",
             hit.surfaceLabel,
+            hit.regionLabel ?? "不明",
             hit.confidence
         )
     }

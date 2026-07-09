@@ -140,24 +140,26 @@ struct SampledBrainSTLSurfaceModel: BrainSurfaceModel {
     var coordinateSpace: String { PointUnprojector.outputCoordinateSpace }
 
     func nearestSurfaceHit(to point: HandJoint3D) -> NearestSurfaceHit? {
-        guard !metadata.sampleVerticesRaw.isEmpty else { return nil }
+        guard !metadata.touchVerticesRaw.isEmpty else { return nil }
 
         let placement = BrainSTLPlacement(metadata: metadata, calibration: calibration)
         let target = SIMD3<Float>(Float(point.x), Float(point.y), Float(point.z))
         var bestPoint: SIMD3<Float>?
+        var bestRawVertex: SIMD3<Float>?
         var bestDistanceSquared = Float.greatestFiniteMagnitude
 
-        for rawVertex in metadata.sampleVerticesRaw {
+        for rawVertex in metadata.touchVerticesRaw {
             let worldPoint = placement.worldPoint(forRawVertex: rawVertex)
             let delta = worldPoint - target
             let distanceSquared = simd_length_squared(delta)
             if distanceSquared < bestDistanceSquared {
                 bestDistanceSquared = distanceSquared
                 bestPoint = worldPoint
+                bestRawVertex = rawVertex
             }
         }
 
-        guard let bestPoint else { return nil }
+        guard let bestPoint, let bestRawVertex else { return nil }
 
         let worldCenter = placement.worldCenter
         let centerDelta = bestPoint - worldCenter
@@ -165,6 +167,7 @@ struct SampledBrainSTLSurfaceModel: BrainSurfaceModel {
             ? simd_normalize(centerDelta)
             : SIMD3<Float>(0, 1, 0)
         let surface = surfaceClassification(normal: normalVector)
+        let block = blockClassification(rawVertex: bestRawVertex)
         let distanceMeters = Double(sqrt(bestDistanceSquared))
         let threshold = max(calibration.touchThresholdMeters, 0.001)
         let confidence = max(0, 1.0 - min(distanceMeters / threshold, 1.0))
@@ -182,7 +185,8 @@ struct SampledBrainSTLSurfaceModel: BrainSurfaceModel {
             ),
             distanceMeters: distanceMeters,
             triangleId: nil,
-            regionId: nil,
+            regionId: block.id,
+            regionLabel: block.label,
             surface: surface.id,
             surfaceLabel: surface.label,
             confidence: confidence
@@ -203,6 +207,56 @@ struct SampledBrainSTLSurfaceModel: BrainSurfaceModel {
         }
 
         return normal.z < 0 ? ("front", "前方") : ("back", "後方")
+    }
+
+    private func blockClassification(rawVertex: SIMD3<Float>) -> (id: String, label: String) {
+        let box = metadata.boundingBox
+        let xRatio = normalized(rawVertex.x, min: box.minX, max: box.maxX)
+        let yRatio = normalized(rawVertex.y, min: box.minY, max: box.maxY)
+        let zRatio = normalized(rawVertex.z, min: box.minZ, max: box.maxZ)
+
+        let layerId: String
+        let layerLabel: String
+        if zRatio >= 0.52 {
+            layerId = "top"
+            layerLabel = "上段"
+        } else {
+            layerId = "side_lower"
+            layerLabel = "側面下段"
+        }
+
+        let depthId: String
+        let depthLabel: String
+        if yRatio < 0.34 {
+            depthId = "front"
+            depthLabel = "前"
+        } else if yRatio < 0.67 {
+            depthId = "middle"
+            depthLabel = "中央"
+        } else {
+            depthId = "back"
+            depthLabel = "後"
+        }
+
+        let sideId: String
+        let sideLabel: String
+        if xRatio < 0.50 {
+            sideId = "left"
+            sideLabel = "左"
+        } else {
+            sideId = "right"
+            sideLabel = "右"
+        }
+
+        return (
+            "\(layerId)_\(depthId)_\(sideId)",
+            "\(layerLabel)・\(depthLabel)\(sideLabel)"
+        )
+    }
+
+    private func normalized(_ value: Float, min minValue: Float, max maxValue: Float) -> Float {
+        let span = max(maxValue - minValue, 0.000001)
+        return Swift.max(0, Swift.min(1, (value - minValue) / span))
     }
 }
 

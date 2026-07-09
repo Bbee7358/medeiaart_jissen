@@ -12,6 +12,7 @@ struct NearestSurfaceHit: Codable, Equatable {
     let distanceMeters: Double
     let triangleId: Int?
     let regionId: String?
+    let regionLabel: String?
     let surface: String
     let surfaceLabel: String
     let confidence: Double

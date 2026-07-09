@@ -286,9 +286,27 @@ MediaPipe座標、ARKitカメラ画像、LiDAR深度マップは、実機の向�
 - STL表面から `strong touch threshold` cm以内なら強い接触候補
 - 同じ領域に `dwell time` 秒以上留まり、confidenceが `confidence threshold` 以上なら `isTouching: true`
 - 近いSTL表面の法線方向から `上面`, `左側面`, `右側面`, `前方`, `後方` を粗く分類する
+- 近いSTL点のモデル内位置から、展示用の12ブロック領域を返す
 - 手が高速移動している時はconfidenceを下げる
 
-まだ三角形面への厳密な最近傍探索やBVHは入れていません。現段階ではSTLのサンプル頂点に対する近似距離です。最終精度を上げる段階で、三角面最近傍探索へ差し替える予定です。
+12ブロックは、上段6ブロックと側面下段6ブロックです。各層を `前/中央/後` x `左/右` に分けています。
+
+- `top_front_left`: 上段・前左
+- `top_front_right`: 上段・前右
+- `top_middle_left`: 上段・中央左
+- `top_middle_right`: 上段・中央右
+- `top_back_left`: 上段・後左
+- `top_back_right`: 上段・後右
+- `side_lower_front_left`: 側面下段・前左
+- `side_lower_front_right`: 側面下段・前右
+- `side_lower_middle_left`: 側面下段・中央左
+- `side_lower_middle_right`: 側面下段・中央右
+- `side_lower_back_left`: 側面下段・後左
+- `side_lower_back_right`: 側面下段・後右
+
+これは医学的な脳部位名ではなく、展示上の安定した反応領域です。最終的には `shared/brain-regions.json` の脳部位ラベル、またはSTL/OBJの三角面ラベルへ置き換えます。
+
+まだ三角形面への厳密な最近傍探索やBVHは入れていません。現段階ではSTLのタッチ判定用サンプル頂点に対する近似距離です。表示用STL点群は軽量な約3,200点、タッチ判定用はより密な約24,000点を使います。最終精度を上げる段階で、三角面最近傍探索へ差し替える予定です。
 
 従来の楕円体判定はフォールバックとして残しています。
 
@@ -347,7 +365,9 @@ AR画面上では、仮楕円体そのものは表示せず、LiDAR深度差で�
 
 画面上では、STLのサンプル頂点を緑の点群、投影boundsと中心をオレンジで表示します。LiDAR差分の青緑点群・黄色bboxと、STL投影の緑/オレンジが重なるほど、現実の脳模型とSTL配置が合っている状態です。
 
-タッチ判定では、STLサンプル頂点との近似距離を優先して使います。画面では `touch mode: stl mesh + index joints` と表示されます。まだ本番用の三角形最近傍探索やBVHは入れていないため、STL表面の凹凸や側面の一部で距離が粗くなる可能性があります。
+タッチ判定では、STLサンプル頂点との近似距離を優先して使います。画面では `touch mode: stl mesh + index joints` と表示されます。`stl nearest surface` には、近い面の向きと12ブロック名が `上面 / 上段・中央左` のように表示されます。
+
+`touch status: none` でも `touch region` が表示されることがあります。これは「一番近いブロックは分かっているが、距離・滞在時間・confidenceが接触確定条件を満たしていない」という意味です。たとえば `touch distance` が `5.8cm` で `touch threshold` が `5.0cm` の場合、近いブロックは表示されますが接触確定にはなりません。
 
 STL投影は、LiDAR差分デバッグで実物位置に合っていた raw camera -> display 変換と同じ経路へ揃えています。`Calibrate Brain From Depth` を押すと、LiDAR候補の中心だけでなく、検出幅も `mesh real width` へ反映されます。まず「アプリ内でSTLが読める」「STLサイズとscaleが画面で確認できる」「LiDAR候補にSTL投影を重ねられる」「指先とSTL表面の距離感を見られる」状態を作っています。
 

@@ -277,11 +277,11 @@ private struct SurfaceEstimate {
     }
 
     init(meshHit: NearestSurfaceHit) {
-        let region = Self.region(forSurface: meshHit.surface)
+        let fallbackRegion = Self.region(forSurface: meshHit.surface)
         self.init(
             distanceMeters: meshHit.distanceMeters,
-            region: region.id,
-            regionLabel: region.label,
+            region: meshHit.regionId ?? fallbackRegion.id,
+            regionLabel: meshHit.regionLabel ?? fallbackRegion.label,
             surface: meshHit.surface,
             surfaceLabel: meshHit.surfaceLabel
         )
