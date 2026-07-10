@@ -167,8 +167,9 @@ struct SampledBrainSTLSurfaceModel: BrainSurfaceModel {
             ? simd_normalize(centerDelta)
             : SIMD3<Float>(0, 1, 0)
         let surface = surfaceClassification(normal: normalVector)
-        let block = blockClassification(
+        let block = BrainRegionBlockClassifier.classify(
             rawVertex: bestRawVertex,
+            boundingBox: metadata.boundingBox,
             surface: surface,
             normal: normalVector
         )
@@ -213,63 +214,6 @@ struct SampledBrainSTLSurfaceModel: BrainSurfaceModel {
         return normal.z < 0 ? ("front", "前方") : ("back", "後方")
     }
 
-    private func blockClassification(
-        rawVertex: SIMD3<Float>,
-        surface: (id: String, label: String),
-        normal: SIMD3<Float>
-    ) -> (id: String, label: String) {
-        let box = metadata.boundingBox
-        let xRatio = normalized(rawVertex.x, min: box.minX, max: box.maxX)
-        let yRatio = normalized(rawVertex.y, min: box.minY, max: box.maxY)
-        let zRatio = normalized(rawVertex.z, min: box.minZ, max: box.maxZ)
-        let distanceToOuterEdge = min(xRatio, 1 - xRatio, yRatio, 1 - yRatio)
-        let isOuterBand = distanceToOuterEdge <= 0.18
-        let isClearlyTopFacing = surface.id == "top" && normal.y > 0.58
-        let isUpperCentralCap = isClearlyTopFacing && !isOuterBand && zRatio >= 0.45
-
-        let layerId: String
-        let layerLabel: String
-        if isUpperCentralCap {
-            layerId = "top"
-            layerLabel = "上段"
-        } else {
-            layerId = "side_lower"
-            layerLabel = "側面下段"
-        }
-
-        let depthId: String
-        let depthLabel: String
-        if yRatio < 0.34 {
-            depthId = "front"
-            depthLabel = "前"
-        } else if yRatio < 0.67 {
-            depthId = "middle"
-            depthLabel = "中央"
-        } else {
-            depthId = "back"
-            depthLabel = "後"
-        }
-
-        let sideId: String
-        let sideLabel: String
-        if xRatio < 0.50 {
-            sideId = "left"
-            sideLabel = "左"
-        } else {
-            sideId = "right"
-            sideLabel = "右"
-        }
-
-        return (
-            "\(layerId)_\(depthId)_\(sideId)",
-            "\(layerLabel)・\(depthLabel)\(sideLabel)"
-        )
-    }
-
-    private func normalized(_ value: Float, min minValue: Float, max maxValue: Float) -> Float {
-        let span = max(maxValue - minValue, 0.000001)
-        return Swift.max(0, Swift.min(1, (value - minValue) / span))
-    }
 }
 
 struct BrainSTLPlacement {

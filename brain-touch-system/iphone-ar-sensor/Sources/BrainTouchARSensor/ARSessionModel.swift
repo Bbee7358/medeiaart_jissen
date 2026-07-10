@@ -364,72 +364,30 @@ private extension ARSessionModel {
         let wrist = detection.landmark(.wrist)
         let thumbTip = detection.landmark(.thumbTip)
         let indexTip = detection.landmark(.indexTip)
-        let indexDIP = detection.landmark(.indexDIP)
-        let indexPIP = detection.landmark(.indexPIP)
         let middleTip = detection.landmark(.middleTip)
-        let middleDIP = detection.landmark(.middleDIP)
         let ringTip = detection.landmark(.ringTip)
-        let ringDIP = detection.landmark(.ringDIP)
         let littleTip = detection.landmark(.littleTip)
 
         let confidence = detection.confidence
         let detected = indexTip != nil && confidence > 0.2
-        let depthSample = DepthSampler.sampleIndexFingerDepth(
-            indexTipVisionPoint: detected ? indexTip?.pseudoVisionPointForDepthSampling : nil,
-            indexDIPVisionPoint: indexDIP?.pseudoVisionPointForDepthSampling,
+        let contactResolution = FingerContactResolver.resolve(
+            detection: detection,
             depthData: depthData,
-            capturedImage: capturedImage,
             depthSource: depthSource,
-            kernelSize: 7
-        )
-        let rawIndexTip3D = PointUnprojector.unprojectDepthSample(
-            depthSample,
-            camera: camera
-        )
-        let indexContactDepthSample = DepthSampler.sampleFingerContactDepth(
-            tipVisionPoint: indexTip?.pseudoVisionPointForDepthSampling,
-            dipVisionPoint: indexDIP?.pseudoVisionPointForDepthSampling,
-            fingerName: "index",
-            depthData: depthData,
             capturedImage: capturedImage,
-            depthSource: depthSource,
-            kernelSize: 7
+            camera: camera,
+            brainSTLMetadata: brainSTLMetadata,
+            calibration: calibration
         )
-        let middleContactDepthSample = DepthSampler.sampleFingerContactDepth(
-            tipVisionPoint: middleTip?.pseudoVisionPointForDepthSampling,
-            dipVisionPoint: middleDIP?.pseudoVisionPointForDepthSampling,
-            fingerName: "middle",
-            depthData: depthData,
-            capturedImage: capturedImage,
-            depthSource: depthSource,
-            kernelSize: 7
-        )
-        let ringContactDepthSample = DepthSampler.sampleFingerContactDepth(
-            tipVisionPoint: ringTip?.pseudoVisionPointForDepthSampling,
-            dipVisionPoint: ringDIP?.pseudoVisionPointForDepthSampling,
-            fingerName: "ring",
-            depthData: depthData,
-            capturedImage: capturedImage,
-            depthSource: depthSource,
-            kernelSize: 7
-        )
-        let fingerSurfaceHit = nearestFingerSurfaceHit(
-            candidates: [
-                rawIndexTip3D,
-                PointUnprojector.unprojectDepthSample(indexContactDepthSample, camera: camera),
-                PointUnprojector.unprojectDepthSample(middleContactDepthSample, camera: camera),
-                PointUnprojector.unprojectDepthSample(ringContactDepthSample, camera: camera)
-            ]
-        )
-        let smoothedIndexTip3D = indexTip3DSmoother.append(rawIndexTip3D)
-        updateSTLNearestDebug(hit: fingerSurfaceHit, fallbackPoint: smoothedIndexTip3D)
+        let smoothedIndexTip3D = indexTip3DSmoother.append(contactResolution.rawIndexTip3D)
+        updateSTLNearestDebug(hit: contactResolution.nearestSurfaceHit, fallbackPoint: smoothedIndexTip3D)
         let touch = touchDetector.update(
             indexTip3D: smoothedIndexTip3D,
-            hasDepth: depthSample != nil || fingerSurfaceHit != nil,
+            hasDepth: contactResolution.indexDepthSample != nil || contactResolution.nearestSurfaceHit != nil,
             timestamp: timestamp,
-            meshHit: fingerSurfaceHit
+            meshHit: contactResolution.nearestSurfaceHit
         )
-        let depthDebug = depthSample.map {
+        let depthDebug = contactResolution.indexDepthSample.map {
             DepthSamplingDebug(
                 depthSample2D: $0.sampleDisplayPoint,
                 rawImageNorm: $0.rawImageNormalized,
@@ -455,7 +413,7 @@ private extension ARSessionModel {
                 ringTip: ringTip,
                 littleTip: littleTip
             ),
-            indexTipDepthMeters: depthSample?.depthMeters,
+            indexTipDepthMeters: contactResolution.indexDepthSample?.depthMeters,
             indexTip3D: smoothedIndexTip3D,
             indexTip3DSpace: PointUnprojector.outputCoordinateSpace,
             depthDebug: depthDebug,
@@ -583,23 +541,6 @@ private extension ARSessionModel {
             overlay.sourceSampleCount,
             overlay.mapping
         )
-    }
-
-    func nearestFingerSurfaceHit(candidates: [HandJoint3D?]) -> NearestSurfaceHit? {
-        guard let metadata = brainSTLMetadata else { return nil }
-
-        let surfaceModel = SampledBrainSTLSurfaceModel(
-            metadata: metadata,
-            calibration: calibration
-        )
-
-        return candidates.compactMap { candidate -> NearestSurfaceHit? in
-            guard let candidate else { return nil }
-            return surfaceModel.nearestSurfaceHit(to: candidate)
-        }
-        .min { lhs, rhs in
-            lhs.distanceMeters < rhs.distanceMeters
-        }
     }
 
     func updateSTLNearestDebug(hit: NearestSurfaceHit?, fallbackPoint: HandJoint3D?) {

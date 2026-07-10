@@ -24,6 +24,9 @@
 		110000000000000000000015 /* BrainSTLProjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000117 /* BrainSTLProjection.swift */; };
 		110000000000000000000016 /* MediaPipeHandLandmarker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000118 /* MediaPipeHandLandmarker.swift */; };
 		110000000000000000000017 /* hand_landmarker.task in Resources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000119 /* hand_landmarker.task */; };
+		110000000000000000000018 /* BrainRegionBlockClassifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000120 /* BrainRegionBlockClassifier.swift */; };
+		110000000000000000000019 /* FingerContactResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000121 /* FingerContactResolver.swift */; };
+		110000000000000000000020 /* DebugOverlayViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000122 /* DebugOverlayViews.swift */; };
 		6663FCDB8F6DEF8711B1ADCC /* Pods_BrainTouchARSensor.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C8771A0120AB6592CFF4AF45 /* Pods_BrainTouchARSensor.framework */; };
 /* End PBXBuildFile section */
 
@@ -47,6 +50,9 @@
 		110000000000000000000117 /* BrainSTLProjection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainSTLProjection.swift; sourceTree = "<group>"; };
 		110000000000000000000118 /* MediaPipeHandLandmarker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaPipeHandLandmarker.swift; sourceTree = "<group>"; };
 		110000000000000000000119 /* hand_landmarker.task */ = {isa = PBXFileReference; lastKnownFileType = file; path = hand_landmarker.task; sourceTree = "<group>"; };
+		110000000000000000000120 /* BrainRegionBlockClassifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainRegionBlockClassifier.swift; sourceTree = "<group>"; };
+		110000000000000000000121 /* FingerContactResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FingerContactResolver.swift; sourceTree = "<group>"; };
+		110000000000000000000122 /* DebugOverlayViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugOverlayViews.swift; sourceTree = "<group>"; };
 		720822EB28293A9EE1BE1CB6 /* Pods-BrainTouchARSensor.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-BrainTouchARSensor.release.xcconfig"; path = "Target Support Files/Pods-BrainTouchARSensor/Pods-BrainTouchARSensor.release.xcconfig"; sourceTree = "<group>"; };
 		97150B32BDEA67AAD2B01E35 /* Pods-BrainTouchARSensor.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-BrainTouchARSensor.debug.xcconfig"; path = "Target Support Files/Pods-BrainTouchARSensor/Pods-BrainTouchARSensor.debug.xcconfig"; sourceTree = "<group>"; };
 		C8771A0120AB6592CFF4AF45 /* Pods_BrainTouchARSensor.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_BrainTouchARSensor.framework; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -91,6 +97,7 @@
 			children = (
 				110000000000000000000101 /* BrainTouchARSensorApp.swift */,
 				110000000000000000000102 /* ContentView.swift */,
+				110000000000000000000122 /* DebugOverlayViews.swift */,
 				110000000000000000000103 /* ARViewContainer.swift */,
 				110000000000000000000104 /* ARSessionModel.swift */,
 				110000000000000000000105 /* TestEventWebSocketClient.swift */,
@@ -103,6 +110,8 @@
 				110000000000000000000114 /* DepthBrainCalibrator.swift */,
 				110000000000000000000115 /* BrainSTLMesh.swift */,
 				110000000000000000000117 /* BrainSTLProjection.swift */,
+				110000000000000000000120 /* BrainRegionBlockClassifier.swift */,
+				110000000000000000000121 /* FingerContactResolver.swift */,
 				110000000000000000000118 /* MediaPipeHandLandmarker.swift */,
 			);
 			path = Sources/BrainTouchARSensor;
@@ -239,6 +248,7 @@
 			files = (
 				110000000000000000000001 /* BrainTouchARSensorApp.swift in Sources */,
 				110000000000000000000002 /* ContentView.swift in Sources */,
+				110000000000000000000020 /* DebugOverlayViews.swift in Sources */,
 				110000000000000000000003 /* ARViewContainer.swift in Sources */,
 				110000000000000000000004 /* ARSessionModel.swift in Sources */,
 				110000000000000000000005 /* TestEventWebSocketClient.swift in Sources */,
@@ -251,6 +261,8 @@
 				110000000000000000000012 /* DepthBrainCalibrator.swift in Sources */,
 				110000000000000000000013 /* BrainSTLMesh.swift in Sources */,
 				110000000000000000000015 /* BrainSTLProjection.swift in Sources */,
+				110000000000000000000018 /* BrainRegionBlockClassifier.swift in Sources */,
+				110000000000000000000019 /* FingerContactResolver.swift in Sources */,
 				110000000000000000000016 /* MediaPipeHandLandmarker.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
