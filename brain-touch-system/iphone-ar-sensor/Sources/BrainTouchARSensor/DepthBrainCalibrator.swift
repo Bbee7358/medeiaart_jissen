@@ -354,11 +354,21 @@ enum DepthBrainCalibrator {
             from: strongBounds,
             depthMapSize: actualSize
         )
-        let candidatePixels = connectedObjectPixels(
+        let denoisedExpandableMask = denoiseMask(
+            expandableMask,
+            depthMapSize: actualSize,
+            minNeighborCount: 3
+        )
+        let expandedCandidatePixels = connectedObjectPixels(
             seeds: centeredStrongPixels,
-            expandableMask: expandableMask,
+            expandableMask: denoisedExpandableMask,
             depthMapSize: actualSize,
             allowedBounds: allowedBounds
+        )
+        let candidatePixels = denoisePixels(
+            expandedCandidatePixels,
+            depthMapSize: actualSize,
+            minNeighborCount: 3
         )
 
         var currentSamples: [Float] = []
@@ -657,6 +667,76 @@ enum DepthBrainCalibrator {
         }
 
         return queue
+    }
+
+    private static func denoiseMask(
+        _ mask: [Bool],
+        depthMapSize: PixelSize,
+        minNeighborCount: Int
+    ) -> [Bool] {
+        let width = depthMapSize.w
+        let height = depthMapSize.h
+        guard mask.count == width * height else { return mask }
+
+        var result = mask
+        for y in 0..<height {
+            for x in 0..<width {
+                let index = y * width + x
+                guard mask[index] else { continue }
+                if neighborCount(x: x, y: y, mask: mask, depthMapSize: depthMapSize) < minNeighborCount {
+                    result[index] = false
+                }
+            }
+        }
+
+        return result
+    }
+
+    private static func denoisePixels(
+        _ pixels: [PixelPoint],
+        depthMapSize: PixelSize,
+        minNeighborCount: Int
+    ) -> [PixelPoint] {
+        guard pixels.count >= minCandidateSamples else { return pixels }
+
+        let width = depthMapSize.w
+        let height = depthMapSize.h
+        var mask = Array(repeating: false, count: width * height)
+        for pixel in pixels where pixel.x >= 0 && pixel.x < width && pixel.y >= 0 && pixel.y < height {
+            mask[pixel.y * width + pixel.x] = true
+        }
+
+        let filtered = pixels.filter { pixel in
+            neighborCount(x: pixel.x, y: pixel.y, mask: mask, depthMapSize: depthMapSize) >= minNeighborCount
+        }
+        return filtered.count >= minCandidateSamples ? filtered : pixels
+    }
+
+    private static func neighborCount(
+        x: Int,
+        y: Int,
+        mask: [Bool],
+        depthMapSize: PixelSize
+    ) -> Int {
+        let width = depthMapSize.w
+        let height = depthMapSize.h
+        var count = 0
+        for dy in -1...1 {
+            for dx in -1...1 {
+                if dx == 0 && dy == 0 { continue }
+
+                let nx = x + dx
+                let ny = y + dy
+                guard nx >= 0, nx < width, ny >= 0, ny < height else {
+                    continue
+                }
+
+                if mask[ny * width + nx] {
+                    count += 1
+                }
+            }
+        }
+        return count
     }
 
     private static func floodFillComponent(

@@ -186,29 +186,9 @@ struct BrainDepthDetectionOverlay: View {
                 guard snapshot.rawDepthCount > 0 || snapshot.candidateCount > 0 else { return }
 
                 drawPoints(
-                    snapshot.rawDepthPoints,
-                    color: .white.opacity(0.20),
-                    pointSize: max(1.4, min(size.width, size.height) * 0.0038),
-                    context: context,
-                    size: size
-                )
-                drawHeatPoints(
-                    snapshot.raisedHeatPoints,
-                    pointSize: max(3.0, min(size.width, size.height) * 0.008),
-                    context: context,
-                    size: size
-                )
-                drawPoints(
-                    snapshot.weakPoints,
-                    color: .yellow.opacity(0.80),
-                    pointSize: max(2.8, min(size.width, size.height) * 0.0075),
-                    context: context,
-                    size: size
-                )
-                drawPoints(
                     snapshot.points,
-                    color: .cyan.opacity(0.96),
-                    pointSize: max(3.2, min(size.width, size.height) * 0.0086),
+                    color: .green.opacity(0.62),
+                    pointSize: max(2.6, min(size.width, size.height) * 0.0068),
                     context: context,
                     size: size
                 )
@@ -275,32 +255,6 @@ struct BrainDepthDetectionOverlay: View {
         context.fill(path, with: .color(color))
     }
 
-    private func drawHeatPoints(
-        _ points: [DepthDeltaOverlayPoint],
-        pointSize: Double,
-        context: GraphicsContext,
-        size: CGSize
-    ) {
-        for point in points {
-            let normalized = min(1.0, max(0.0, point.heightMeters / 0.10))
-            let color = Color(
-                red: 0.25 + normalized * 0.75,
-                green: 0.05 + normalized * 0.35,
-                blue: 1.0 - normalized * 0.95
-            ).opacity(0.88)
-            let center = CGPoint(
-                x: point.point.x * size.width,
-                y: point.point.y * size.height
-            )
-            let rect = CGRect(
-                x: center.x - pointSize / 2,
-                y: center.y - pointSize / 2,
-                width: pointSize,
-                height: pointSize
-            )
-            context.fill(Path(ellipseIn: rect), with: .color(color))
-        }
-    }
 }
 
 struct DepthDiagnosticBadge: View {
@@ -311,7 +265,7 @@ struct DepthDiagnosticBadge: View {
             Text("DEPTH DEBUG v4")
                 .font(.caption.weight(.black))
                 .foregroundStyle(.white)
-            Text("white raw  purple/red raised  yellow weak  cyan adopted")
+            Text("green adopted  yellow outline  red center")
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.white)
             Text("green/orange STL projection")

@@ -71,6 +71,7 @@ struct ContentView: View {
                     }
 
                     DebugRow(label: "depth calibration", value: sessionModel.depthCalibrationStatusText)
+                    DebugRow(label: "auto calibration", value: sessionModel.autoCalibrationText)
                     DebugRow(label: "depth calib samples", value: sessionModel.depthCalibrationSampleText)
                     DebugRow(label: "depth calib estimate", value: sessionModel.depthCalibrationEstimateText)
                     DebugRow(label: "raw LiDAR depth points", value: "\(sessionModel.brainDetectionOverlay.rawDepthCount)")
