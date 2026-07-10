@@ -57,9 +57,9 @@ final class ARSessionModel: NSObject, ObservableObject {
     private let handLandmarker = MediaPipeHandLandmarker()
     private var isTrackingNormal = false
     private var stableDepthFrameCount = 0
-    private var lastAutoDepthEstimateTimestamp: TimeInterval = 0
+    private var lastAutoBaselineAttemptTimestamp: TimeInterval = 0
     private var hasAutoCapturedBaseline = false
-    private var hasAutoAppliedDepthEstimate = false
+    private var hasConfirmedBrainCalibration = false
 
     override init() {
         let loadedCalibration = BrainCalibrationStore.load()
@@ -75,6 +75,7 @@ final class ARSessionModel: NSObject, ObservableObject {
 
     func setBrainModelCenterToCurrentFinger() {
         guard let indexTip3D = handPose.indexTip3D else { return }
+        hasConfirmedBrainCalibration = true
         updateCalibration { calibration in
             calibration.centerX = indexTip3D.x
             calibration.centerY = indexTip3D.y
@@ -89,6 +90,12 @@ final class ARSessionModel: NSObject, ObservableObject {
     }
 
     func resetCalibration() {
+        hasConfirmedBrainCalibration = false
+        depthCalibrationBaseline = nil
+        brainDetectionOverlay = .empty
+        stlProjectionOverlay = .empty
+        stlProjectionText = "-"
+        autoCalibrationText = "waiting for stable empty view"
         applyCalibration(BrainCalibrationStore.reset(), save: false)
     }
 
@@ -247,51 +254,32 @@ private extension ARSessionModel {
             return
         }
 
-        if depthCalibrationBaseline == nil {
-            do {
-                let baseline = try DepthBrainCalibrator.makeBaseline(
-                    depthData: depthData,
-                    camera: camera,
-                    workingRadiusMeters: 0.50
-                )
-                depthCalibrationBaseline = baseline
-                hasAutoCapturedBaseline = true
-                autoCalibrationText = "auto baseline captured"
-                depthCalibrationStatusText = "auto empty baseline captured"
-                depthCalibrationSampleText = String(
-                    format: "baseline %d px, %.2fm, r %.0fpx",
-                    baseline.sampleCount,
-                    baseline.medianDepthMeters,
-                    baseline.workingRadiusPixels
-                )
-            } catch {
-                autoCalibrationText = "auto baseline failed"
-            }
+        guard depthCalibrationBaseline == nil else {
+            autoCalibrationText = hasConfirmedBrainCalibration ? "brain calibrated" : "baseline ready, place brain and calibrate"
             return
         }
 
-        guard timestamp - lastAutoDepthEstimateTimestamp >= 2.0,
-              let baseline = depthCalibrationBaseline else {
-            return
-        }
+        guard timestamp - lastAutoBaselineAttemptTimestamp >= 3.0 else { return }
+        lastAutoBaselineAttemptTimestamp = timestamp
 
-        lastAutoDepthEstimateTimestamp = timestamp
         do {
-            let estimate = try DepthBrainCalibrator.estimateBrain(
+            let baseline = try DepthBrainCalibrator.makeBaseline(
                 depthData: depthData,
                 camera: camera,
-                baseline: baseline
+                workingRadiusMeters: 0.50
             )
-            applyDepthCalibrationEstimate(
-                estimate,
-                status: hasAutoAppliedDepthEstimate ? "auto depth calibration updated" : "auto brain calibrated from depth",
-                blendWithCurrent: hasAutoAppliedDepthEstimate,
-                save: true
+            depthCalibrationBaseline = baseline
+            hasAutoCapturedBaseline = true
+            autoCalibrationText = "auto baseline ready"
+            depthCalibrationStatusText = "auto empty baseline captured"
+            depthCalibrationSampleText = String(
+                format: "baseline %d px, %.2fm, r %.0fpx",
+                baseline.sampleCount,
+                baseline.medianDepthMeters,
+                baseline.workingRadiusPixels
             )
-            hasAutoAppliedDepthEstimate = true
-            autoCalibrationText = hasAutoCapturedBaseline ? "auto baseline + brain active" : "auto brain active"
         } catch {
-            autoCalibrationText = "auto waiting for brain candidate"
+            autoCalibrationText = "auto baseline failed"
         }
     }
 
@@ -309,6 +297,7 @@ private extension ARSessionModel {
                 )
                 depthCalibrationBaseline = baseline
                 depthCalibrationStatusText = "empty baseline captured"
+                autoCalibrationText = "baseline ready, place brain and calibrate"
                 depthCalibrationSampleText = String(
                     format: "baseline %d px, %.2fm, r %.0fpx",
                     baseline.sampleCount,
@@ -317,6 +306,7 @@ private extension ARSessionModel {
                 )
                 depthCalibrationEstimateText = "-"
                 brainDetectionOverlay = .empty
+                hasConfirmedBrainCalibration = false
 
             case .estimateBrainFromBaseline:
                 guard let baseline = depthCalibrationBaseline else {
@@ -338,8 +328,12 @@ private extension ARSessionModel {
             }
         } catch let error as DepthBrainCalibrationError {
             depthCalibrationStatusText = "calibration error: \(error.description)"
+            brainDetectionOverlay = .empty
+            hasConfirmedBrainCalibration = false
         } catch {
             depthCalibrationStatusText = "calibration error: \(error.localizedDescription)"
+            brainDetectionOverlay = .empty
+            hasConfirmedBrainCalibration = false
         }
     }
 
@@ -360,6 +354,8 @@ private extension ARSessionModel {
         next.meshRealWidthMeters = blended(current: next.meshRealWidthMeters, estimate: estimate.widthMeters, alpha: blend)
         applyCalibration(next, save: save)
         brainDetectionOverlay = estimate.overlay
+        hasConfirmedBrainCalibration = true
+        autoCalibrationText = hasAutoCapturedBaseline ? "auto baseline + brain calibrated" : "brain calibrated"
 
         depthCalibrationStatusText = status
         depthCalibrationSampleText = String(
@@ -468,6 +464,32 @@ private extension ARSessionModel {
 
         let confidence = detection.confidence
         let detected = indexTip != nil && confidence > 0.2
+        guard hasConfirmedBrainCalibration else {
+            updateSTLNearestDebug(hit: nil, fallbackPoint: nil)
+            return HandPoseSnapshot(
+                handDetected: detected,
+                wrist: wrist,
+                skeleton: HandSkeleton2D(landmarks: detection.landmarks),
+                fingerTips: FingerTips2D(
+                    thumbTip: thumbTip,
+                    indexTip: indexTip,
+                    middleTip: middleTip,
+                    ringTip: ringTip,
+                    littleTip: littleTip
+                ),
+                indexTipDepthMeters: nil,
+                indexTip3D: nil,
+                indexTip3DSpace: PointUnprojector.outputCoordinateSpace,
+                depthDebug: nil,
+                touch: .empty,
+                calibration: calibration,
+                confidence: detected ? confidence : 0,
+                detectorSource: "mediapipe",
+                detectorStatus: detection.status,
+                detectorInferenceMs: detection.inferenceMs
+            )
+        }
+
         let contactResolution = FingerContactResolver.resolve(
             detection: detection,
             depthData: depthData,
@@ -622,6 +644,12 @@ private extension ARSessionModel {
     }
 
     func updateSTLProjection(camera: ARCamera) {
+        guard hasConfirmedBrainCalibration else {
+            stlProjectionOverlay = .empty
+            stlProjectionText = "-"
+            return
+        }
+
         let overlay = BrainSTLProjector.makeOverlay(
             metadata: brainSTLMetadata,
             calibration: calibration,
