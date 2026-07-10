@@ -1,6 +1,14 @@
 import ARKit
 import Foundation
 
+private struct HandDetectionFrameContext: @unchecked Sendable {
+    let pixelBuffer: CVPixelBuffer
+    let depthData: ARDepthData?
+    let depthSource: String
+    let camera: ARCamera
+    let timestamp: TimeInterval
+}
+
 @MainActor
 final class ARSessionModel: NSObject, ObservableObject {
     @Published var sessionStatus = "not started"
@@ -49,18 +57,20 @@ final class ARSessionModel: NSObject, ObservableObject {
     private var lastFrameTimestamp: TimeInterval?
     private var lastHandPoseTimestamp: TimeInterval = 0
     private var smoothedFrameRate: Double = 0
-    private let handPoseInterval: TimeInterval = 0.15
-    private var indexTip3DSmoother = Point3DSmoother(maxSampleCount: 5)
+    private let handPoseInterval: TimeInterval = 1.0 / 30.0
+    private var contactPoint3DSmoother = Point3DSmoother(maxSampleCount: 5)
+    private var lastSelectedFinger: ContactFinger?
     private let touchDetector: TouchDetector
     private var depthCalibrationBaseline: DepthCalibrationBaseline?
+    private var pendingBaselineFrames: [DepthCalibrationBaseline] = []
     private var pendingDepthCalibrationAction: DepthCalibrationAction?
     private var brainSTLMetadata: BrainSTLMetadata?
-    private let handLandmarker = MediaPipeHandLandmarker()
+    private let handDetectionWorker = MediaPipeHandDetectionWorker()
+    private var isHandDetectionInFlight = false
     private var isTrackingNormal = false
-    private var stableDepthFrameCount = 0
-    private var lastAutoBaselineAttemptTimestamp: TimeInterval = 0
-    private var hasAutoCapturedBaseline = false
     private var hasConfirmedBrainCalibration = false
+
+    var currentFPS: Double { smoothedFrameRate }
 
     override init() {
         let loadedCalibration = BrainCalibrationStore.load()
@@ -69,7 +79,7 @@ final class ARSessionModel: NSObject, ObservableObject {
         self.brainModelCenterText = Self.formatCenter(loadedCalibration.model.center)
         self.touchDetector = TouchDetector(calibration: loadedCalibration)
         super.init()
-        self.handDetectorStatusText = handLandmarker.status
+        self.handDetectorStatusText = handDetectionWorker.status
         self.handPose = makeEmptySnapshot()
         self.loadBrainSTLMetadata()
     }
@@ -100,8 +110,9 @@ final class ARSessionModel: NSObject, ObservableObject {
     }
 
     func captureEmptyDepthBaseline() {
+        pendingBaselineFrames.removeAll(keepingCapacity: true)
         pendingDepthCalibrationAction = .captureEmptyBaseline
-        depthCalibrationStatusText = "capturing empty baseline..."
+        depthCalibrationStatusText = "capturing empty baseline 0/15..."
     }
 
     func calibrateBrainFromDepthDifference() {
@@ -143,6 +154,14 @@ final class ARSessionModel: NSObject, ObservableObject {
         }
 
         configuration.frameSemantics = semantics
+        if let format = ARWorldTrackingConfiguration.supportedVideoFormats
+            .filter({ $0.framesPerSecond == 30 })
+            .max(by: {
+                $0.imageResolution.width * $0.imageResolution.height
+                    < $1.imageResolution.width * $1.imageResolution.height
+            }) {
+            configuration.videoFormat = format
+        }
         isDepthAvailable = !semantics.isEmpty
         depthStatus = isDepthAvailable ? "available" : "unavailable"
         sessionStatus = "running"
@@ -163,7 +182,6 @@ extension ARSessionModel: ARSessionDelegate {
         Task { @MainActor in
             self.isTrackingNormal = Self.isNormalTracking(camera.trackingState)
             self.updateFrameMetrics(timestamp: timestamp, hasDepth: hasDepth)
-            self.processAutoDepthCalibration(depthData: depthData, camera: camera, timestamp: timestamp)
             self.processDepthCalibrationIfNeeded(depthData: depthData, camera: camera)
             self.detectHandPoseIfNeeded(
                 pixelBuffer: pixelBuffer,
@@ -229,71 +247,24 @@ private extension ARSessionModel {
         timestampText = String(format: "%.3f", timestamp)
         isDepthAvailable = hasDepth
         depthStatus = hasDepth ? "available" : "unavailable"
-        if hasDepth, isTrackingNormal, !handPose.handDetected {
-            stableDepthFrameCount += 1
-        } else {
-            stableDepthFrameCount = 0
-        }
-    }
-
-    func processAutoDepthCalibration(
-        depthData: ARDepthData?,
-        camera: ARCamera,
-        timestamp: TimeInterval
-    ) {
-        guard pendingDepthCalibrationAction == nil,
-              depthData != nil,
-              isTrackingNormal,
-              !handPose.handDetected else {
-            return
-        }
-
-        guard stableDepthFrameCount >= 30 else {
-            autoCalibrationText = "waiting for stable empty view"
-            return
-        }
-
-        guard depthCalibrationBaseline == nil else {
-            autoCalibrationText = hasConfirmedBrainCalibration ? "brain calibrated" : "baseline ready, place brain and calibrate"
-            return
-        }
-
-        guard timestamp - lastAutoBaselineAttemptTimestamp >= 3.0 else { return }
-        lastAutoBaselineAttemptTimestamp = timestamp
-
-        do {
-            let baseline = try DepthBrainCalibrator.makeBaseline(
-                depthData: depthData,
-                camera: camera,
-                workingRadiusMeters: 0.50
-            )
-            depthCalibrationBaseline = baseline
-            hasAutoCapturedBaseline = true
-            autoCalibrationText = "auto baseline ready"
-            depthCalibrationStatusText = "auto empty baseline captured"
-            depthCalibrationSampleText = String(
-                format: "baseline %d px, %.2fm, r %.0fpx",
-                baseline.sampleCount,
-                baseline.medianDepthMeters,
-                baseline.workingRadiusPixels
-            )
-        } catch {
-            autoCalibrationText = "auto baseline failed"
-        }
     }
 
     func processDepthCalibrationIfNeeded(depthData: ARDepthData?, camera: ARCamera) {
         guard let action = pendingDepthCalibrationAction else { return }
-        pendingDepthCalibrationAction = nil
-
         do {
             switch action {
             case .captureEmptyBaseline:
-                let baseline = try DepthBrainCalibrator.makeBaseline(
+                let frameBaseline = try DepthBrainCalibrator.makeBaseline(
                     depthData: depthData,
                     camera: camera,
                     workingRadiusMeters: 0.50
                 )
+                pendingBaselineFrames.append(frameBaseline)
+                depthCalibrationStatusText = "capturing empty baseline \(pendingBaselineFrames.count)/15..."
+                guard pendingBaselineFrames.count >= 15 else { return }
+                let baseline = try DepthBrainCalibrator.mergeBaselines(pendingBaselineFrames)
+                pendingDepthCalibrationAction = nil
+                pendingBaselineFrames.removeAll(keepingCapacity: true)
                 depthCalibrationBaseline = baseline
                 depthCalibrationStatusText = "empty baseline captured"
                 autoCalibrationText = "baseline ready, place brain and calibrate"
@@ -308,6 +279,7 @@ private extension ARSessionModel {
                 hasConfirmedBrainCalibration = false
 
             case .estimateBrainFromBaseline:
+                pendingDepthCalibrationAction = nil
                 guard let baseline = depthCalibrationBaseline else {
                     depthCalibrationStatusText = "capture empty baseline first"
                     return
@@ -326,10 +298,14 @@ private extension ARSessionModel {
                 )
             }
         } catch let error as DepthBrainCalibrationError {
+            pendingDepthCalibrationAction = nil
+            pendingBaselineFrames.removeAll(keepingCapacity: true)
             depthCalibrationStatusText = "calibration error: \(error.description)"
             brainDetectionOverlay = .empty
             hasConfirmedBrainCalibration = false
         } catch {
+            pendingDepthCalibrationAction = nil
+            pendingBaselineFrames.removeAll(keepingCapacity: true)
             depthCalibrationStatusText = "calibration error: \(error.localizedDescription)"
             brainDetectionOverlay = .empty
             hasConfirmedBrainCalibration = false
@@ -354,7 +330,7 @@ private extension ARSessionModel {
         applyCalibration(next, save: save)
         brainDetectionOverlay = estimate.overlay
         hasConfirmedBrainCalibration = true
-        autoCalibrationText = hasAutoCapturedBaseline ? "auto baseline + brain calibrated" : "brain calibrated"
+        autoCalibrationText = "brain calibrated"
 
         depthCalibrationStatusText = status
         depthCalibrationSampleText = String(
@@ -392,12 +368,43 @@ private extension ARSessionModel {
         camera: ARCamera,
         timestamp: TimeInterval
     ) {
-        guard timestamp - lastHandPoseTimestamp >= handPoseInterval else { return }
+        guard timestamp - lastHandPoseTimestamp >= handPoseInterval,
+              !isHandDetectionInFlight else { return }
         lastHandPoseTimestamp = timestamp
+        isHandDetectionInFlight = true
+        let context = HandDetectionFrameContext(
+            pixelBuffer: pixelBuffer,
+            depthData: depthData,
+            depthSource: depthSource,
+            camera: camera,
+            timestamp: timestamp
+        )
+        handDetectionWorker.detect(pixelBuffer: pixelBuffer) { [weak self] detection in
+            Task { @MainActor in
+                guard let self else { return }
+                self.isHandDetectionInFlight = false
+                self.handleHandDetection(
+                    detection,
+                    pixelBuffer: context.pixelBuffer,
+                    depthData: context.depthData,
+                    depthSource: context.depthSource,
+                    camera: context.camera,
+                    timestamp: context.timestamp
+                )
+            }
+        }
+    }
 
-        let detection = handLandmarker.detect(pixelBuffer: pixelBuffer)
+    func handleHandDetection(
+        _ detection: MediaPipeHandDetection,
+        pixelBuffer: CVPixelBuffer,
+        depthData: ARDepthData?,
+        depthSource: String,
+        camera: ARCamera,
+        timestamp: TimeInterval
+    ) {
         guard detection.handDetected else {
-            indexTip3DSmoother.reset()
+            contactPoint3DSmoother.reset()
             _ = touchDetector.update(indexTip3D: nil, hasDepth: false, timestamp: timestamp)
             updateSTLNearestDebug(indexTip3D: nil)
             updateHandPose(makeEmptySnapshot(detectorStatus: detection.status, inferenceMs: detection.inferenceMs))
@@ -483,6 +490,15 @@ private extension ARSessionModel {
 
         let confidence = detection.confidence
         let detected = indexTip != nil && confidence > 0.2
+        let contactResolution = FingerContactResolver.resolve(
+            detection: detection,
+            depthData: depthData,
+            depthSource: depthSource,
+            capturedImage: capturedImage,
+            camera: camera,
+            brainSTLMetadata: hasConfirmedBrainCalibration ? brainSTLMetadata : nil,
+            calibration: calibration
+        )
         guard hasConfirmedBrainCalibration else {
             updateSTLNearestDebug(hit: nil, fallbackPoint: nil)
             return HandPoseSnapshot(
@@ -496,10 +512,20 @@ private extension ARSessionModel {
                     ringTip: ringTip,
                     littleTip: littleTip
                 ),
-                indexTipDepthMeters: nil,
-                indexTip3D: nil,
+                indexTipDepthMeters: contactResolution.indexDepthSample?.depthMeters,
+                indexTip3D: contactResolution.rawIndexTip3D,
+                selectedFinger: nil,
+                selectedFingerTip3D: nil,
+                selectedFingerDIP3D: nil,
+                surfaceApproachAlignment: nil,
+                calibrationValid: false,
+                reprojectionErrorPixels: PointUnprojector.reprojectionErrorPixels(
+                    worldPoint: contactResolution.rawIndexTip3D,
+                    sample: contactResolution.indexDepthSample,
+                    camera: camera
+                ),
                 indexTip3DSpace: PointUnprojector.outputCoordinateSpace,
-                depthDebug: nil,
+                depthDebug: makeDepthDebug(contactResolution.indexDepthSample),
                 touch: .empty,
                 calibration: calibration,
                 confidence: detected ? confidence : 0,
@@ -509,38 +535,20 @@ private extension ARSessionModel {
             )
         }
 
-        let contactResolution = FingerContactResolver.resolve(
-            detection: detection,
-            depthData: depthData,
-            depthSource: depthSource,
-            capturedImage: capturedImage,
-            camera: camera,
-            brainSTLMetadata: brainSTLMetadata,
-            calibration: calibration
-        )
-        let smoothedIndexTip3D = indexTip3DSmoother.append(contactResolution.rawIndexTip3D)
-        updateSTLNearestDebug(hit: contactResolution.nearestSurfaceHit, fallbackPoint: smoothedIndexTip3D)
-        let touchPoint = contactResolution.nearestSurfaceHit == nil ? nil : smoothedIndexTip3D
-        let touch = touchDetector.update(
-            indexTip3D: touchPoint,
-            hasDepth: contactResolution.nearestSurfaceHit != nil,
-            timestamp: timestamp,
-            meshHit: contactResolution.nearestSurfaceHit
-        )
-        let depthDebug = contactResolution.indexDepthSample.map {
-            DepthSamplingDebug(
-                depthSample2D: $0.sampleDisplayPoint,
-                rawImageNorm: $0.rawImageNormalized,
-                depthPixel: $0.depthPixel,
-                depthMapSize: $0.depthMapSize,
-                capturedImageSize: $0.capturedImageSize,
-                visionOrientation: $0.visionOrientation,
-                depthConfidenceRaw: $0.depthConfidenceRaw,
-                depthSource: $0.depthSource,
-                depthStrategy: $0.depthStrategy,
-                depthSampleCount: $0.sampleCount
-            )
+        let selected = contactResolution.selected
+        if selected?.finger != lastSelectedFinger {
+            contactPoint3DSmoother.reset()
+            lastSelectedFinger = selected?.finger
         }
+        let smoothedContactPoint = contactPoint3DSmoother.append(selected?.tip3D)
+        updateSTLNearestDebug(hit: selected?.surfaceHit, fallbackPoint: smoothedContactPoint)
+        let touch = touchDetector.update(
+            indexTip3D: smoothedContactPoint,
+            hasDepth: selected != nil,
+            timestamp: timestamp,
+            meshHit: selected?.surfaceHit,
+            surfaceApproachAlignment: selected?.surfaceApproachAlignment
+        )
 
         return HandPoseSnapshot(
             handDetected: detected,
@@ -554,9 +562,19 @@ private extension ARSessionModel {
                 littleTip: littleTip
             ),
             indexTipDepthMeters: contactResolution.indexDepthSample?.depthMeters,
-            indexTip3D: smoothedIndexTip3D,
+            indexTip3D: contactResolution.rawIndexTip3D,
+            selectedFinger: selected?.finger,
+            selectedFingerTip3D: smoothedContactPoint,
+            selectedFingerDIP3D: selected?.dip3D,
+            surfaceApproachAlignment: selected?.surfaceApproachAlignment,
+            calibrationValid: true,
+            reprojectionErrorPixels: PointUnprojector.reprojectionErrorPixels(
+                worldPoint: smoothedContactPoint,
+                sample: selected?.tipDepthSample,
+                camera: camera
+            ),
             indexTip3DSpace: PointUnprojector.outputCoordinateSpace,
-            depthDebug: depthDebug,
+            depthDebug: makeDepthDebug(selected?.tipDepthSample ?? contactResolution.indexDepthSample),
             touch: touch,
             calibration: calibration,
             confidence: detected ? max(confidence, touch.confidence) : 0,
@@ -580,6 +598,12 @@ private extension ARSessionModel {
             ),
             indexTipDepthMeters: nil,
             indexTip3D: nil,
+            selectedFinger: nil,
+            selectedFingerTip3D: nil,
+            selectedFingerDIP3D: nil,
+            surfaceApproachAlignment: nil,
+            calibrationValid: hasConfirmedBrainCalibration,
+            reprojectionErrorPixels: nil,
             indexTip3DSpace: PointUnprojector.outputCoordinateSpace,
             depthDebug: nil,
             touch: .empty,
@@ -591,12 +615,29 @@ private extension ARSessionModel {
         )
     }
 
+    func makeDepthDebug(_ sample: DepthSampleResult?) -> DepthSamplingDebug? {
+        sample.map {
+            DepthSamplingDebug(
+                depthSample2D: $0.sampleDisplayPoint,
+                rawImageNorm: $0.rawImageNormalized,
+                depthPixel: $0.depthPixel,
+                depthMapSize: $0.depthMapSize,
+                capturedImageSize: $0.capturedImageSize,
+                visionOrientation: $0.visionOrientation,
+                depthConfidenceRaw: $0.depthConfidenceRaw,
+                depthSource: $0.depthSource,
+                depthStrategy: $0.depthStrategy,
+                depthSampleCount: $0.sampleCount
+            )
+        }
+    }
+
     func applyCalibration(_ calibration: BrainCalibration, save: Bool) {
         let sanitized = BrainCalibrationStore.sanitized(calibration)
         self.calibration = sanitized
         self.brainModel = sanitized.model
         self.brainModelCenterText = Self.formatCenter(sanitized.model.center)
-        self.indexTip3DSmoother = Point3DSmoother(maxSampleCount: sanitized.smoothingFrames)
+        self.contactPoint3DSmoother = Point3DSmoother(maxSampleCount: sanitized.smoothingFrames)
         self.touchDetector.updateCalibration(sanitized)
         if save {
             BrainCalibrationStore.save(sanitized)
@@ -605,17 +646,19 @@ private extension ARSessionModel {
     }
 
     func loadBrainSTLMetadata() {
-        do {
-            let metadata = try BrainSTLMeshLoader.loadBundledMetadata()
+        stlStatusText = "loading..."
+        Task {
+            let metadata = await Task.detached(priority: .userInitiated) {
+                try? BrainSTLMeshLoader.loadBundledMetadata()
+            }.value
+            guard let metadata else {
+                brainSTLMetadata = nil
+                stlStatusText = "error: STL load failed"
+                return
+            }
             brainSTLMetadata = metadata
             stlStatusText = "loaded"
             updateSTLDebugText()
-        } catch let error as BrainSTLMeshLoadError {
-            brainSTLMetadata = nil
-            stlStatusText = "error: \(error.description)"
-        } catch {
-            brainSTLMetadata = nil
-            stlStatusText = "error: \(error.localizedDescription)"
         }
     }
 

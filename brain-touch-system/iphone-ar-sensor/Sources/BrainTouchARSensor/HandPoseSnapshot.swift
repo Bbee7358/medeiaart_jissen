@@ -80,6 +80,12 @@ struct HandPoseSnapshot: Equatable {
     let fingerTips: FingerTips2D
     let indexTipDepthMeters: Double?
     let indexTip3D: HandJoint3D?
+    let selectedFinger: ContactFinger?
+    let selectedFingerTip3D: HandJoint3D?
+    let selectedFingerDIP3D: HandJoint3D?
+    let surfaceApproachAlignment: Double?
+    let calibrationValid: Bool
+    let reprojectionErrorPixels: Double?
     let indexTip3DSpace: String
     let depthDebug: DepthSamplingDebug?
     let touch: TouchDetectionResult
@@ -102,6 +108,12 @@ struct HandPoseSnapshot: Equatable {
         ),
         indexTipDepthMeters: nil,
         indexTip3D: nil,
+        selectedFinger: nil,
+        selectedFingerTip3D: nil,
+        selectedFingerDIP3D: nil,
+        surfaceApproachAlignment: nil,
+        calibrationValid: false,
+        reprojectionErrorPixels: nil,
         indexTip3DSpace: "arkit_world",
         depthDebug: nil,
         touch: .empty,

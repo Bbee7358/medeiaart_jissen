@@ -126,16 +126,40 @@ enum PointUnprojector {
             return SIMD3<Float>(0, 0, -depthMeters)
         }
 
-        // Camera space used here: +X image right, +Y image down, camera looks along -Z.
-        // ARKit's camera intrinsics are expressed in image pixel coordinates with a
-        // top-left origin, so keeping image Y positive downward prevents vertical
-        // mirroring when depth-map pixels are unprojected back into the AR camera ray.
-        // TODO: Recheck this if the final installation uses a landscape mount.
+        // Image pixels use +Y downward, while ARKit camera space uses +Y upward and
+        // looks along -Z. Negating the image-space Y offset is therefore required
+        // before camera.transform can place the point in AR world space.
         let x = (pixelX - cx) * depthMeters / fx
-        let y = (pixelY - cy) * depthMeters / fy
+        let y = -(pixelY - cy) * depthMeters / fy
         let z = -depthMeters
 
         return SIMD3<Float>(x, y, z)
+    }
+
+    static func reprojectionErrorPixels(
+        worldPoint: HandJoint3D?,
+        sample: DepthSampleResult?,
+        camera: ARCamera
+    ) -> Double? {
+        guard let worldPoint, let sample else { return nil }
+        let world = SIMD4<Float>(
+            Float(worldPoint.x),
+            Float(worldPoint.y),
+            Float(worldPoint.z),
+            1
+        )
+        let cameraPoint = simd_inverse(camera.transform) * world
+        let depth = -cameraPoint.z
+        guard depth > 0 else { return nil }
+        let intrinsics = scaledIntrinsicsForDepth(
+            camera: camera,
+            depthMapSize: CGSize(width: sample.depthMapSize.w, height: sample.depthMapSize.h)
+        )
+        let pixelX = intrinsics.columns.0.x * cameraPoint.x / depth + intrinsics.columns.2.x
+        let pixelY = intrinsics.columns.2.y - intrinsics.columns.1.y * cameraPoint.y / depth
+        let dx = Double(pixelX) - Double(sample.depthPixel.x)
+        let dy = Double(pixelY) - Double(sample.depthPixel.y)
+        return sqrt(dx * dx + dy * dy)
     }
 }
 

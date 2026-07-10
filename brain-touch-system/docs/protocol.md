@@ -18,6 +18,9 @@ PC側は受信したJSONを表示・ログ保存・演出接続に使います�
 
 - `touch_event`: iPhoneからPCへ送るタッチ判定イベント
 - `settings_update`: PCからiPhoneへ送る判定設定
+- `hello` / `hello_ack`: `iphone_sensor` または `dashboard` の役割登録
+- `settings_forwarded`: サーバーが設定をiPhoneへ転送した通知
+- `settings_applied`: iPhoneが設定を保存・適用した通知
 - `ping`: 接続確認
 - `pong`: `ping` への応答
 
@@ -146,6 +149,12 @@ PCダッシュボードでしきい値を変更すると、PC側WebSocketサー�
 | `depthMeters` | number or null | 人差し指先位置でサンプリングしたLiDAR深度 |
 | `fingerTips2D` | object | 各指先の正規化2D座標 |
 | `fps` | number | iPhone側の推定FPS |
+| `selectedFinger` | string or null | 実際にSTLへ最も近かった指 |
+| `selectedFingerTip3D` | object or null | 判定に使用した平滑化済み指先3D |
+| `selectedFingerDIP3D` | object or null | 選択指のDIP 3D |
+| `surfaceApproachAlignment` | number or null | 指方向と表面法線の整合度 |
+| `reprojectionErrorPixels` | number or null | 3D点を画像へ戻したときの誤差 |
+| `calibrationValid` | boolean | 現ARSessionでキャリブレーション済みか |
 
 `indexTip3D` の現在の座標系は `arkit_world` です。ARKitワールド座標は、ARSession開始時に決まる原点を基準にしたメートル単位の座標です。脳模型との距離判定に使うには、別途キャリブレーションで脳模型座標系へ変換する必要があります。
 
@@ -187,6 +196,8 @@ PCダッシュボードでしきい値を変更すると、PC側WebSocketサー�
 初期候補です。
 
 - `index_fingertip`
+- `middle_fingertip`
+- `ring_fingertip`
 - `hand_palm`
 - `unknown`
 
@@ -194,7 +205,7 @@ PCダッシュボードでしきい値を変更すると、PC側WebSocketサー�
 
 ## 送信頻度
 
-初期目標は 15から30 FPS です。
+センサー認識は最大30Hz、PCへのイベント送信は10Hzです。
 
 PC側では全イベントをログ保存できますが、演出システムへは状態変化だけ送る設計も検討します。
 

@@ -57,7 +57,7 @@ export type TouchEventMessage = {
   regionLabel: string | null;
   surface: string | null;
   surfaceLabel: string | null;
-  contactType: "index_fingertip" | "hand_palm" | "unknown";
+  contactType: "index_fingertip" | "middle_fingertip" | "ring_fingertip" | "multiple_fingertips" | "hand_palm" | "unknown";
   distanceCm: number | null;
   durationSec: number;
   confidence: number;
@@ -65,6 +65,13 @@ export type TouchEventMessage = {
     indexTip2D: Point2D | null;
     indexTip3D: Point3D | null;
     indexTip3DSpace?: "arkit_world" | "camera";
+    selectedFinger?: "index" | "middle" | "ring" | null;
+    selectedFingerTip3D?: Point3D | null;
+    selectedFingerDIP3D?: Point3D | null;
+    surfaceApproachAlignment?: number | null;
+    reprojectionErrorPixels?: number | null;
+    calibrationValid?: boolean;
+    eventFps?: number;
     fingerTips2D?: {
       thumbTip: Point2D | null;
       indexTip: Point2D | null;

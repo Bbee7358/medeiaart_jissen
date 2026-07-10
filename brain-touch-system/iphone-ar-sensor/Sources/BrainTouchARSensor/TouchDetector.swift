@@ -37,8 +37,9 @@ final class TouchDetector {
     private var model: BrainEllipsoidModel
     private var calibration: BrainCalibration
 
-    private var activeRegion: String?
-    private var activeRegionStartedAt: TimeInterval?
+    private var candidateStartedAt: TimeInterval?
+    private var stableRegion: (id: String, label: String)?
+    private var pendingRegion: (id: String, label: String, frames: Int)?
     private var lastPoint: HandJoint3D?
     private var lastTimestamp: TimeInterval?
 
@@ -57,7 +58,8 @@ final class TouchDetector {
         indexTip3D: HandJoint3D?,
         hasDepth: Bool,
         timestamp: TimeInterval,
-        meshHit: NearestSurfaceHit? = nil
+        meshHit: NearestSurfaceHit? = nil,
+        surfaceApproachAlignment: Double? = nil
     ) -> TouchDetectionResult {
         let motionPoint = indexTip3D ?? meshHit?.point
         guard hasDepth, let point = motionPoint else {
@@ -72,16 +74,18 @@ final class TouchDetector {
         let isCandidate = absDistance <= calibration.touchThresholdMeters
         let isStrongCandidate = absDistance <= calibration.strongThresholdMeters
 
-        let duration = updateDuration(
-            region: surface.region,
-            isCandidate: isCandidate,
-            timestamp: timestamp
+        let duration = updateDuration(isCandidate: isCandidate, timestamp: timestamp)
+        let region = stabilizedRegion(
+            id: surface.region,
+            label: surface.regionLabel,
+            isCandidate: isCandidate
         )
         let confidence = confidenceScore(
             distanceMeters: absDistance,
             isCandidate: isCandidate,
             durationSec: duration,
-            speedMetersPerSec: speed
+            speedMetersPerSec: speed,
+            surfaceApproachAlignment: surfaceApproachAlignment
         )
         let isTouching = isCandidate
             && duration >= calibration.dwellTimeSeconds
@@ -91,8 +95,8 @@ final class TouchDetector {
             isCandidate: isCandidate,
             isStrongCandidate: isStrongCandidate,
             isTouching: isTouching,
-            region: surface.region,
-            regionLabel: surface.regionLabel,
+            region: region.id,
+            regionLabel: region.label,
             surface: surface.surface,
             surfaceLabel: surface.surfaceLabel,
             distanceCm: absDistance * 100,
@@ -187,20 +191,14 @@ final class TouchDetector {
         )
     }
 
-    private func updateDuration(region: String, isCandidate: Bool, timestamp: TimeInterval) -> Double {
+    private func updateDuration(isCandidate: Bool, timestamp: TimeInterval) -> Double {
         guard isCandidate else {
             resetRegion()
             return 0
         }
 
-        if activeRegion != region {
-            activeRegion = region
-            activeRegionStartedAt = timestamp
-            return 0
-        }
-
-        guard let startedAt = activeRegionStartedAt else {
-            activeRegionStartedAt = timestamp
+        guard let startedAt = candidateStartedAt else {
+            candidateStartedAt = timestamp
             return 0
         }
 
@@ -211,7 +209,8 @@ final class TouchDetector {
         distanceMeters: Double,
         isCandidate: Bool,
         durationSec: Double,
-        speedMetersPerSec: Double?
+        speedMetersPerSec: Double?,
+        surfaceApproachAlignment: Double?
     ) -> Double {
         guard isCandidate else { return 0 }
 
@@ -221,7 +220,8 @@ final class TouchDetector {
             : min(durationSec / calibration.dwellTimeSeconds, 1.0)
         let speed = speedMetersPerSec ?? 0
         let speedPenalty = speed <= 0.20 ? 1.0 : max(0.35, 1.0 - ((speed - 0.20) / 0.80))
-        return min(max((distanceScore * 0.65 + durationScore * 0.35) * speedPenalty, 0), 1)
+        let approachFactor = surfaceApproachAlignment.map { 0.85 + 0.15 * $0 } ?? 1.0
+        return min(max((distanceScore * 0.65 + durationScore * 0.35) * speedPenalty * approachFactor, 0), 1)
     }
 
     @discardableResult
@@ -244,8 +244,35 @@ final class TouchDetector {
     }
 
     private func resetRegion() {
-        activeRegion = nil
-        activeRegionStartedAt = nil
+        candidateStartedAt = nil
+        stableRegion = nil
+        pendingRegion = nil
+    }
+
+    private func stabilizedRegion(
+        id: String,
+        label: String,
+        isCandidate: Bool
+    ) -> (id: String, label: String) {
+        guard isCandidate else { return (id, label) }
+        if stableRegion?.id == id {
+            pendingRegion = nil
+            return stableRegion ?? (id, label)
+        }
+        if pendingRegion?.id == id {
+            let frames = (pendingRegion?.frames ?? 0) + 1
+            pendingRegion = (id, label, frames)
+            if frames >= 3 {
+                stableRegion = (id, label)
+                pendingRegion = nil
+            }
+        } else {
+            pendingRegion = (id, label, 1)
+        }
+        if stableRegion == nil {
+            stableRegion = (id, label)
+        }
+        return stableRegion ?? (id, label)
     }
 
     private func distance(_ a: HandJoint3D, _ b: HandJoint3D) -> Double {

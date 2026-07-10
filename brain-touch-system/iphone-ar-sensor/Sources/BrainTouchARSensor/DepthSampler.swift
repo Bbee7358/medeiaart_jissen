@@ -28,17 +28,10 @@ enum DepthSampler {
     ) -> DepthSampleResult? {
         guard let indexTipVisionPoint, let depthData else { return nil }
 
-        let sampleVisionPoint: CGPoint
-        let strategy: String
-        if let indexDIPVisionPoint {
-            sampleVisionPoint = lerp(indexTipVisionPoint, indexDIPVisionPoint, t: 0.25)
-            strategy = "tip_to_dip_25percent_confidence_near_percentile_20"
-        } else {
-            sampleVisionPoint = indexTipVisionPoint
-            strategy = "tip_only_confidence_near_percentile_20"
-        }
+        _ = indexDIPVisionPoint
+        let sampleVisionPoint = indexTipVisionPoint
+        let strategy = "exact_tip_high_confidence_median"
 
-        let depthMap = depthData.depthMap
         return sampleDepth(
             visionPoint: sampleVisionPoint,
             depthData: depthData,
@@ -55,7 +48,7 @@ enum DepthSampler {
         depthData: ARDepthData?,
         capturedImage: CVPixelBuffer,
         depthSource: String,
-        kernelSize: Int = 7
+        kernelSize: Int = 5
     ) -> DepthSampleResult? {
         guard let visionPoint, let depthData else { return nil }
 
@@ -65,7 +58,7 @@ enum DepthSampler {
             capturedImage: capturedImage,
             depthSource: depthSource,
             kernelSize: kernelSize,
-            strategy: "\(jointName)_confidence_near_percentile_20"
+            strategy: "\(jointName)_high_confidence_median"
         )
     }
 
@@ -80,15 +73,9 @@ enum DepthSampler {
     ) -> DepthSampleResult? {
         guard let tipVisionPoint, let depthData else { return nil }
 
-        let sampleVisionPoint: CGPoint
-        let strategy: String
-        if let dipVisionPoint {
-            sampleVisionPoint = lerp(tipVisionPoint, dipVisionPoint, t: 0.20)
-            strategy = "\(fingerName)_tip_to_dip_20percent_confidence_near_percentile_20"
-        } else {
-            sampleVisionPoint = tipVisionPoint
-            strategy = "\(fingerName)_tip_only_confidence_near_percentile_20"
-        }
+        _ = dipVisionPoint
+        let sampleVisionPoint = tipVisionPoint
+        let strategy = "\(fingerName)_exact_tip_high_confidence_median"
 
         return sampleDepth(
             visionPoint: sampleVisionPoint,
@@ -149,7 +136,8 @@ enum DepthSampler {
         } ?? false
 
         let radius = max(0, kernelSize / 2)
-        var samples: [Float] = []
+        var highConfidenceSamples: [Float] = []
+        var mediumConfidenceSamples: [Float] = []
         let centerConfidence = confidenceBaseAddress.flatMap {
             readConfidenceRaw(
                 confidenceBaseAddress: $0,
@@ -165,29 +153,32 @@ enum DepthSampler {
                 let y = centerY + yOffset
                 guard x >= 0, x < depthWidth, y >= 0, y < depthHeight else { continue }
 
-                if confidenceMatchesDepth,
-                   let confidenceBaseAddress,
-                   !isDepthConfidenceUsable(
-                    confidenceBaseAddress: confidenceBaseAddress,
-                    bytesPerRow: confidenceBytesPerRow,
-                    x: x,
-                    y: y
-                   ) {
-                    continue
-                }
-
                 let row = depthBaseAddress.advanced(by: y * depthBytesPerRow)
                 let value = row.assumingMemoryBound(to: Float32.self)[x]
                 if value.isFinite && value >= 0.10 && value <= 2.00 {
-                    samples.append(value)
+                    let confidence = confidenceMatchesDepth && confidenceBaseAddress != nil
+                        ? readConfidenceRaw(
+                            confidenceBaseAddress: confidenceBaseAddress!,
+                            bytesPerRow: confidenceBytesPerRow,
+                            x: x,
+                            y: y
+                        )
+                        : 2
+                    if confidence == 2 {
+                        highConfidenceSamples.append(value)
+                    } else if confidence == 1 {
+                        mediumConfidenceSamples.append(value)
+                    }
                 }
             }
         }
 
-        guard samples.count >= 4 else { return nil }
+        var samples = highConfidenceSamples.count >= 3
+            ? highConfidenceSamples
+            : highConfidenceSamples + mediumConfidenceSamples
+        guard samples.count >= 3 else { return nil }
         samples.sort()
-        let percentileIndex = clamp(Int(Float(samples.count - 1) * 0.20), min: 0, max: samples.count - 1)
-        let selectedDepth = samples[percentileIndex]
+        let selectedDepth = samples[samples.count / 2]
 
         return DepthSampleResult(
             depthMeters: Double(selectedDepth),
@@ -226,31 +217,6 @@ enum DepthSampler {
             x: orientedTopLeft.y,
             y: 1.0 - orientedTopLeft.x
         )
-    }
-
-    private static func lerp(_ a: CGPoint, _ b: CGPoint, t: CGFloat) -> CGPoint {
-        CGPoint(
-            x: a.x + (b.x - a.x) * t,
-            y: a.y + (b.y - a.y) * t
-        )
-    }
-
-    private static func isDepthConfidenceUsable(
-        confidenceBaseAddress: UnsafeMutableRawPointer,
-        bytesPerRow: Int,
-        x: Int,
-        y: Int
-    ) -> Bool {
-        guard let confidence = readConfidenceRaw(
-            confidenceBaseAddress: confidenceBaseAddress,
-            bytesPerRow: bytesPerRow,
-            x: x,
-            y: y
-        ) else {
-            return false
-        }
-
-        return confidence > 0
     }
 
     private static func readConfidenceRaw(

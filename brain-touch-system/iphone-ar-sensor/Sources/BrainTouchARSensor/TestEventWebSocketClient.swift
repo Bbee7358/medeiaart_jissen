@@ -14,12 +14,18 @@ final class TestEventWebSocketClient: NSObject, ObservableObject {
     private var urlSession: URLSession?
     private var webSocketTask: URLSessionWebSocketTask?
     private var sendTimer: Timer?
+    private var heartbeatTimer: Timer?
     private var connectTimeoutTimer: Timer?
+    private var reconnectTimer: Timer?
+    private var reconnectDelay: TimeInterval = 1
+    private var wantsConnection = false
     private var handPose = HandPoseSnapshot.empty
+    private var currentFPS = 0.0
     var onSettingsUpdate: ((RemoteSettingsUpdatePayload) -> Void)?
 
     func connect() {
         disconnect()
+        wantsConnection = true
 
         guard let url = URL(string: urlString), url.scheme == "ws" || url.scheme == "wss" else {
             connectionStatus = "invalid URL"
@@ -41,15 +47,21 @@ final class TestEventWebSocketClient: NSObject, ObservableObject {
                 self.webSocketTask = nil
                 self.urlSession?.invalidateAndCancel()
                 self.urlSession = nil
+                self.scheduleReconnect()
             }
         }
     }
 
     func disconnect() {
+        wantsConnection = false
+        reconnectTimer?.invalidate()
+        reconnectTimer = nil
         connectTimeoutTimer?.invalidate()
         connectTimeoutTimer = nil
         sendTimer?.invalidate()
         sendTimer = nil
+        heartbeatTimer?.invalidate()
+        heartbeatTimer = nil
 
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
         webSocketTask = nil
@@ -59,8 +71,9 @@ final class TestEventWebSocketClient: NSObject, ObservableObject {
         connectionStatus = "disconnected"
     }
 
-    func updateHandPose(_ handPose: HandPoseSnapshot) {
+    func updateHandPose(_ handPose: HandPoseSnapshot, fps: Double) {
         self.handPose = handPose
+        self.currentFPS = fps
     }
 
     func checkHealth() {
@@ -103,7 +116,10 @@ extension TestEventWebSocketClient: URLSessionWebSocketDelegate {
             self.connectTimeoutTimer = nil
             self.isConnected = true
             self.connectionStatus = "connected"
+            self.reconnectDelay = 1
+            self.sendHello()
             self.startSending()
+            self.startHeartbeat()
             self.listenForMessages()
         }
     }
@@ -119,8 +135,11 @@ extension TestEventWebSocketClient: URLSessionWebSocketDelegate {
             self.connectTimeoutTimer = nil
             self.sendTimer?.invalidate()
             self.sendTimer = nil
+            self.heartbeatTimer?.invalidate()
+            self.heartbeatTimer = nil
             self.isConnected = false
             self.connectionStatus = "closed: \(closeCode.readableDescription)"
+            self.scheduleReconnect()
         }
     }
 }
@@ -139,7 +158,7 @@ private extension TestEventWebSocketClient {
         sendTimer?.invalidate()
         sendTestEvent()
 
-        sendTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        sendTimer = Timer.scheduledTimer(withTimeInterval: 0.10, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.sendTestEvent()
             }
@@ -149,7 +168,11 @@ private extension TestEventWebSocketClient {
     func sendTestEvent() {
         guard let webSocketTask else { return }
 
-        let event = TouchTestEvent(timestamp: Int(Date().timeIntervalSince1970 * 1000), handPose: handPose)
+        let event = TouchTestEvent(
+            timestamp: Int(Date().timeIntervalSince1970 * 1000),
+            handPose: handPose,
+            fps: currentFPS
+        )
 
         do {
             let encoder = JSONEncoder()
@@ -168,6 +191,7 @@ private extension TestEventWebSocketClient {
                         self?.isConnected = false
                         self?.sendTimer?.invalidate()
                         self?.sendTimer = nil
+                        self?.scheduleReconnect()
                         return
                     }
 
@@ -197,6 +221,7 @@ private extension TestEventWebSocketClient {
                     self?.sendTimer = nil
                     self?.isConnected = false
                     self?.connectionStatus = "disconnected: \(error.localizedDescription)"
+                    self?.scheduleReconnect()
                 }
             }
         }
@@ -230,12 +255,17 @@ private extension TestEventWebSocketClient {
                 let settings = try decoder.decode(IncomingSettingsUpdateMessage.self, from: data).payload.sanitized()
                 onSettingsUpdate?(settings)
                 lastSettingsUpdateText = Self.formatTimestamp(Int(Date().timeIntervalSince1970 * 1000))
+                sendSettingsApplied()
             case "ping":
                 sendPong()
             case "pong":
                 break
+            case "hello_required":
+                sendHello()
+            case "hello_ack", "serverDiagnostics", "dailyStats", "settings_forwarded":
+                break
             default:
-                connectionStatus = "ignored message type: \(envelope.type)"
+                break
             }
         } catch {
             connectionStatus = "ignored invalid settings/message: \(error.localizedDescription)"
@@ -252,6 +282,48 @@ private extension TestEventWebSocketClient {
             webSocketTask.send(.string(json)) { _ in }
         } catch {
             connectionStatus = "pong encode error"
+        }
+    }
+
+    func sendHello() {
+        sendJSON(["type": "hello", "payload": ["role": "iphone_sensor"]])
+    }
+
+    func sendSettingsApplied() {
+        sendJSON([
+            "type": "settings_applied",
+            "payload": ["timestamp": Int(Date().timeIntervalSince1970 * 1000)]
+        ])
+    }
+
+    func startHeartbeat() {
+        heartbeatTimer?.invalidate()
+        heartbeatTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.sendJSON(["type": "ping", "timestamp": Int(Date().timeIntervalSince1970 * 1000)])
+            }
+        }
+    }
+
+    func sendJSON(_ object: [String: Any]) {
+        guard let webSocketTask,
+              JSONSerialization.isValidJSONObject(object),
+              let data = try? JSONSerialization.data(withJSONObject: object),
+              let json = String(data: data, encoding: .utf8) else { return }
+        webSocketTask.send(.string(json)) { _ in }
+    }
+
+    func scheduleReconnect() {
+        guard wantsConnection, reconnectTimer == nil else { return }
+        let delay = reconnectDelay
+        reconnectDelay = min(reconnectDelay * 2, 15)
+        connectionStatus = "reconnecting in \(Int(delay))s"
+        reconnectTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.wantsConnection else { return }
+                self.reconnectTimer = nil
+                self.connect()
+            }
         }
     }
 
@@ -312,9 +384,10 @@ struct RemoteSettingsUpdatePayload: Codable, Equatable {
     let smoothingFrames: Int
 
     func sanitized() -> RemoteSettingsUpdatePayload {
-        RemoteSettingsUpdatePayload(
-            touchThresholdCm: Self.clamp(touchThresholdCm, min: 0.5, max: 20.0),
-            strongTouchThresholdCm: Self.clamp(strongTouchThresholdCm, min: 0.5, max: 20.0),
+        let sanitizedTouch = Self.clamp(touchThresholdCm, min: 0.5, max: 20.0)
+        return RemoteSettingsUpdatePayload(
+            touchThresholdCm: sanitizedTouch,
+            strongTouchThresholdCm: Self.clamp(strongTouchThresholdCm, min: 0.5, max: sanitizedTouch),
             dwellTimeSec: Self.clamp(dwellTimeSec, min: 0.0, max: 3.0),
             confidenceThreshold: Self.clamp(confidenceThreshold, min: 0.0, max: 1.0),
             smoothingFrames: Int(Self.clamp(Double(smoothingFrames), min: 1, max: 30))
@@ -361,7 +434,7 @@ private struct TouchTestEvent: Encodable {
     let confidence: Double
     let debug: TouchTestDebug
 
-    init(timestamp: Int, handPose: HandPoseSnapshot) {
+    init(timestamp: Int, handPose: HandPoseSnapshot, fps: Double) {
         self.timestamp = timestamp
         self.handDetected = handPose.handDetected
         self.isTouching = handPose.touch.isTouching
@@ -369,11 +442,11 @@ private struct TouchTestEvent: Encodable {
         self.regionLabel = handPose.touch.regionLabel
         self.surface = handPose.touch.surface
         self.surfaceLabel = handPose.touch.surfaceLabel
-        self.contactType = handPose.handDetected ? "index_fingertip" : "unknown"
+        self.contactType = handPose.selectedFinger?.contactType ?? "unknown"
         self.distanceCm = handPose.touch.distanceCm
         self.durationSec = handPose.touch.durationSec
-        self.confidence = handPose.touch.isCandidate ? handPose.touch.confidence : handPose.confidence
-        self.debug = TouchTestDebug(handPose: handPose)
+        self.confidence = handPose.touch.confidence
+        self.debug = TouchTestDebug(handPose: handPose, fps: fps)
     }
 
     enum CodingKeys: String, CodingKey {
@@ -416,6 +489,12 @@ private struct TouchTestDebug: Encodable {
     let indexTip2D: HandJoint2D?
     let indexTip3D: HandJoint3D?
     let indexTip3DSpace: String
+    let selectedFinger: String?
+    let selectedFingerTip3D: HandJoint3D?
+    let selectedFingerDIP3D: HandJoint3D?
+    let surfaceApproachAlignment: Double?
+    let calibrationValid: Bool
+    let reprojectionErrorPixels: Double?
     let depthMeters: Double?
     let handDetectorSource: String
     let handDetectorStatus: String
@@ -438,12 +517,19 @@ private struct TouchTestDebug: Encodable {
     let fingerSpeedMetersPerSec: Double?
     let surfaceContactProfile: SurfaceContactProfile?
     let calibration: BrainCalibration
-    let fps = 30.0
+    let eventFps: Double
+    let fps: Double
 
-    init(handPose: HandPoseSnapshot) {
+    init(handPose: HandPoseSnapshot, fps: Double) {
         self.indexTip2D = handPose.fingerTips.indexTip
         self.indexTip3D = handPose.indexTip3D
         self.indexTip3DSpace = handPose.indexTip3DSpace
+        self.selectedFinger = handPose.selectedFinger?.rawValue
+        self.selectedFingerTip3D = handPose.selectedFingerTip3D
+        self.selectedFingerDIP3D = handPose.selectedFingerDIP3D
+        self.surfaceApproachAlignment = handPose.surfaceApproachAlignment
+        self.calibrationValid = handPose.calibrationValid
+        self.reprojectionErrorPixels = handPose.reprojectionErrorPixels
         self.depthMeters = handPose.indexTipDepthMeters
         self.handDetectorSource = handPose.detectorSource
         self.handDetectorStatus = handPose.detectorStatus
@@ -466,12 +552,20 @@ private struct TouchTestDebug: Encodable {
         self.fingerSpeedMetersPerSec = handPose.touch.speedMetersPerSec
         self.surfaceContactProfile = handPose.touch.contactProfile
         self.calibration = handPose.calibration
+        self.eventFps = 10.0
+        self.fps = fps
     }
 
     enum CodingKeys: String, CodingKey {
         case indexTip2D
         case indexTip3D
         case indexTip3DSpace
+        case selectedFinger
+        case selectedFingerTip3D
+        case selectedFingerDIP3D
+        case surfaceApproachAlignment
+        case calibrationValid
+        case reprojectionErrorPixels
         case depthMeters
         case handDetectorSource
         case handDetectorStatus
@@ -494,6 +588,7 @@ private struct TouchTestDebug: Encodable {
         case fingerSpeedMetersPerSec
         case surfaceContactProfile
         case calibration
+        case eventFps
         case fps
     }
 
@@ -502,6 +597,12 @@ private struct TouchTestDebug: Encodable {
         try container.encodeOptionalAsNull(indexTip2D, forKey: .indexTip2D)
         try container.encodeOptionalAsNull(indexTip3D, forKey: .indexTip3D)
         try container.encode(indexTip3DSpace, forKey: .indexTip3DSpace)
+        try container.encodeOptionalAsNull(selectedFinger, forKey: .selectedFinger)
+        try container.encodeOptionalAsNull(selectedFingerTip3D, forKey: .selectedFingerTip3D)
+        try container.encodeOptionalAsNull(selectedFingerDIP3D, forKey: .selectedFingerDIP3D)
+        try container.encodeOptionalAsNull(surfaceApproachAlignment, forKey: .surfaceApproachAlignment)
+        try container.encode(calibrationValid, forKey: .calibrationValid)
+        try container.encodeOptionalAsNull(reprojectionErrorPixels, forKey: .reprojectionErrorPixels)
         try container.encodeOptionalAsNull(depthMeters, forKey: .depthMeters)
         try container.encode(handDetectorSource, forKey: .handDetectorSource)
         try container.encode(handDetectorStatus, forKey: .handDetectorStatus)
@@ -524,6 +625,7 @@ private struct TouchTestDebug: Encodable {
         try container.encodeOptionalAsNull(fingerSpeedMetersPerSec, forKey: .fingerSpeedMetersPerSec)
         try container.encodeOptionalAsNull(surfaceContactProfile, forKey: .surfaceContactProfile)
         try container.encode(calibration, forKey: .calibration)
+        try container.encode(eventFps, forKey: .eventFps)
         try container.encode(fps, forKey: .fps)
     }
 }

@@ -52,7 +52,7 @@ WebSocketサーバーは、受信した有効なタッチイベントをJSON Lin
 - ファイル名: `touch-events-YYYY-MM-DD.jsonl`
 - 形式: 1行に1イベントのJSON
 - 不正なJSON: 保存せず、サーバーコンソールに警告を出す
-- 必須フィールド不足: `../shared/touch-event.schema.json` の `required` を使って検出し、保存せず警告を出す
+- Schema不一致: `../shared/touch-event.schema.json` をAjvで完全検証し、型・範囲・enum・入れ子を含めて不正なら保存しない
 
 例:
 
@@ -96,7 +96,11 @@ logs/touch-events-2026-07-08.jsonl
 }
 ```
 
-WebSocketサーバーは最新の設定を保持し、後から接続したiPhoneにも送ります。不正な `settings_update` は破棄され、サーバー警告としてダッシュボードのConnection Diagnosticsに表示されます。
+WebSocketサーバーは最新の設定を保持し、後から接続したiPhoneにも送ります。ダッシュボードは `settings_forwarded`、iPhone適用後は `settings_applied` を受け取ります。
+
+## Connection Roles And Health
+
+8787番では接続直後に `iphone_sensor` または `dashboard` の役割を登録します。診断・集計はダッシュボードだけ、設定はiPhoneだけへ配信します。15秒ごとのping/pongで応答しない接続を切断します。ログは非同期ストリームで保存し、致命例外後は不整合状態で継続せず終了します。
 
 ## Performance Output
 
@@ -158,6 +162,12 @@ OSCはTouchDesignerやMax/MSPとの相性がよい一方、Node側に追加ラ�
 
 ```sh
 npm run build
+```
+
+契約テスト:
+
+```sh
+npm test
 ```
 
 ## Production-like Server

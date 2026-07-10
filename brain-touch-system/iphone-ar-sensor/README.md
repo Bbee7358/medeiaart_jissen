@@ -2,7 +2,7 @@
 
 iPhone 12 Proをカメラ + LiDARセンサーとして使うための最小iOSアプリ構成です。
 
-この段階では、ARSessionを起動し、LiDAR対応端末で `sceneDepth` または `smoothedSceneDepth` が利用できるかを画面に表示します。また、MediaPipe Hand Landmarkerでカメラ画像から手の21関節を検出し、PC側WebSocketサーバーへ1秒ごとにJSONを送信できます。
+この段階では、ARSessionを起動し、LiDAR対応端末で `sceneDepth` または `smoothedSceneDepth` が利用できるかを画面に表示します。また、MediaPipe Hand Landmarkerでカメラ画像から手の21関節を検出し、PC側WebSocketサーバーへ10HzでJSONを送信できます。
 
 ## 方針
 
@@ -147,13 +147,13 @@ MediaPipeへ渡すカメラ画像は、背面カメラの `ARFrame.capturedImage
 
 1. `ARFrame.smoothedSceneDepth` を優先して取得する
 2. なければ `ARFrame.sceneDepth` を使う
-3. `indexTip` ちょうどではなく、`indexTip` から `indexDIP` 側へ25%戻した点を深度サンプル点にする
+3. `indexTip`、`middleTip`、`ringTip` の正確な位置を個別にサンプリングする
 4. MediaPipe表示座標を captured image のネイティブ正規化座標へ変換する
 5. captured image正規化座標をdepth mapピクセルへ変換する
-6. 周辺7x7ピクセルをサンプリングする
-7. confidence map がある場合、最低信頼度のサンプルを除外する
+6. 周辺5x5ピクセルをサンプリングする
+7. confidence map がある場合、高信頼度を優先し、最低信頼度は除外する
 8. 0.10mから2.00mの有効な深度だけを残す
-9. 指先が背景より手前にある前提で、中央値ではなく20パーセンタイルを `depthMeters` として使う
+9. 高信頼度サンプルの中央値を `depthMeters` として使う
 
 深度が取れない場合、`debug.depthMeters` は `null` になります。
 
@@ -211,7 +211,7 @@ ipconfig getifaddr en0
 ws://192.168.0.10:8787
 ```
 
-入力後、`Connect` を押すと1秒ごとに `touch_event` JSONを送信します。PC側ダッシュボードで受信件数が増え、`logs/touch-events-YYYY-MM-DD.jsonl` に保存されれば通信成功です。
+入力後、`Connect` を押すと10Hzで `touch_event` JSONを送信します。接続時には `iphone_sensor` として役割登録し、PC側ダッシュボードで受信件数が増えれば通信成功です。
 
 PCダッシュボード側でしきい値を変更すると、同じWebSocket経由で `settings_update` がiPhoneへ送られます。iPhone画面の `last settings update` が更新され、Calibration内の `touch threshold`, `strong touch threshold`, `dwell time`, `confidence threshold`, `smoothing frames` に反映されれば受信成功です。受信した設定は `UserDefaults` に保存され、アプリ再起動後も保持されます。
 
@@ -276,7 +276,7 @@ MediaPipe座標、ARKitカメラ画像、LiDAR深度マップは、実機の向�
 
 ## 脳模型タッチ判定
 
-現在のタッチ判定は、読み込んだSTL脳モデルのサンプル表面を優先します。STLが読めない場合や最近傍点が取れない場合だけ、従来の楕円体判定へ戻ります。
+現在のタッチ判定はSTL脳モデルの三角面を使います。最大100,000面を空間グリッドで絞り、三角面上の最近傍点とSTL法線を求めます。キャリブレーション未確定時は接触判定を行いません。
 
 手側はMediaPipeで検出した人差し指・中指・薬指の先端側をLiDAR深度で3D化し、その中でSTL表面に一番近い点を採用します。具体的には `indexTip`, `middleTip`, `ringTip` から、それぞれDIP関節側へ少し戻した点を接触候補にします。指先1点だけだと、細い指先の深度が背景や脳表面へ抜けることがあるため、複数の指先側を候補に入れています。これにより、上面だけでなく側面に触れた時の判定が拾いやすくなります。
 
@@ -284,7 +284,8 @@ MediaPipe座標、ARKitカメラ画像、LiDAR深度マップは、実機の向�
 
 - STL表面から `touch threshold` cm以内なら接触候補
 - STL表面から `strong touch threshold` cm以内なら強い接触候補
-- 同じ領域に `dwell time` 秒以上留まり、confidenceが `confidence threshold` 以上なら `isTouching: true`
+- 接触候補が `dwell time` 秒以上継続し、confidenceが `confidence threshold` 以上なら `isTouching: true`
+- 領域ラベルは3フレームで安定化し、境界をまたいでも接触時間はリセットしない
 - 近いSTL表面の法線方向から `上面`, `左側面`, `右側面`, `前方`, `後方` を粗く分類する
 - 近いSTL点のモデル内位置から、展示用の12ブロック領域を返す
 - 手が高速移動している時はconfidenceを下げる

@@ -84,6 +84,8 @@ let logStream: fs.WriteStream | null = null;
 let logStreamDate: string | null = null;
 let lastEventAt: number | null = null;
 let lastEventRemote: string | null = null;
+let lastHttpRequestAt: number | null = null;
+let lastHttpRequestRemote: string | null = null;
 let lastSettingsAt: number | null = null;
 let lastSettingsRemote: string | null = null;
 let lastPerformanceEventAt: number | null = null;
@@ -164,6 +166,8 @@ function diagnosticsPayload() {
     websocketUrls: localAddresses.map((address) => `ws://${address}:${PORT}`),
     lastEventAt,
     lastEventRemote,
+    lastHttpRequestAt,
+    lastHttpRequestRemote,
     lastSettingsAt,
     lastSettingsRemote,
     performanceClientCount: performanceClients.size,
@@ -357,8 +361,12 @@ function handleMessage(socket: WebSocket, raw: Buffer, remote: string) {
       lastSettingsAt = Date.now();
       lastSettingsRemote = remote;
       lastWarning = null;
+      const recipientCount = clientCounts().sensors;
       sendToRole("iphone_sensor", { type: "settings_update", payload: settings });
-      sendJson(socket, { type: "settings_forwarded", payload: { timestamp: Date.now() } });
+      sendJson(socket, {
+        type: "settings_forwarded",
+        payload: { timestamp: Date.now(), recipientCount }
+      });
       broadcastDiagnostics();
       return;
     }
@@ -423,6 +431,8 @@ function buildHealthPayload() {
 }
 
 function handleHttpRequest(request: http.IncomingMessage, response: http.ServerResponse) {
+  lastHttpRequestAt = Date.now();
+  lastHttpRequestRemote = `${request.socket.remoteAddress ?? "unknown"}:${request.socket.remotePort ?? "unknown"}`;
   if (request.url === "/health" || request.url === "/health/") {
     response.writeHead(200, {
       "Access-Control-Allow-Origin": "*",

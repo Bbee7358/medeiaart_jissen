@@ -169,7 +169,7 @@ function isPingPongMessage(message: ServerMessage): message is { type: "ping" | 
 function buildSettingsPayload(thresholds: ThresholdSettings): SettingsUpdatePayload {
   return {
     touchThresholdCm: thresholds.touchThresholdCm,
-    strongTouchThresholdCm: thresholds.strongTouchThresholdCm,
+    strongTouchThresholdCm: Math.min(thresholds.strongTouchThresholdCm, thresholds.touchThresholdCm),
     dwellTimeSec: thresholds.dwellTimeSeconds,
     confidenceThreshold: thresholds.confidenceThreshold,
     smoothingFrames: thresholds.smoothingFrames
@@ -230,11 +230,13 @@ function App() {
   };
 
   useEffect(() => {
-    sendSettingsUpdate(settingsPayload);
+    const timer = window.setTimeout(() => sendSettingsUpdate(settingsPayload), 150);
+    return () => window.clearTimeout(timer);
   }, [settingsPayload]);
 
   useEffect(() => {
-    sendPerformanceOutputSettings(performanceOutput);
+    const timer = window.setTimeout(() => sendPerformanceOutputSettings(performanceOutput), 150);
+    return () => window.clearTimeout(timer);
   }, [performanceOutput]);
 
   useEffect(() => {
@@ -283,7 +285,10 @@ function App() {
           }
 
           if ("type" in parsed && parsed.type === "settings_forwarded") {
-            setSettingsSendStatus("forwarded to iPhone");
+            const payload = parsed.payload as { recipientCount?: number };
+            setSettingsSendStatus((payload.recipientCount ?? 0) > 0
+              ? "forwarded to iPhone"
+              : "saved; waiting for iPhone");
             return;
           }
 
@@ -784,6 +789,30 @@ function App() {
             <div>
               <dt>indexTip3DSpace</dt>
               <dd>{lastEvent?.debug.indexTip3DSpace ?? "-"}</dd>
+            </div>
+            <div>
+              <dt>selected finger</dt>
+              <dd>{lastEvent?.debug.selectedFinger ?? "-"}</dd>
+            </div>
+            <div>
+              <dt>selected tip 3D</dt>
+              <dd>{formatPoint3D(lastEvent?.debug.selectedFingerTip3D ?? null)}</dd>
+            </div>
+            <div>
+              <dt>selected DIP 3D</dt>
+              <dd>{formatPoint3D(lastEvent?.debug.selectedFingerDIP3D ?? null)}</dd>
+            </div>
+            <div>
+              <dt>surface approach</dt>
+              <dd>{formatPercent(lastEvent?.debug.surfaceApproachAlignment)}</dd>
+            </div>
+            <div>
+              <dt>reprojection error</dt>
+              <dd>{formatNumber(lastEvent?.debug.reprojectionErrorPixels)} px</dd>
+            </div>
+            <div>
+              <dt>calibration</dt>
+              <dd>{lastEvent?.debug.calibrationValid ? "valid" : "required"}</dd>
             </div>
             <div>
               <dt>depthSample2D</dt>

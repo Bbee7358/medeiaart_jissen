@@ -3,13 +3,38 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var sessionModel = ARSessionModel()
     @StateObject private var webSocketClient = TestEventWebSocketClient()
+    @State private var showDebugPanel = false
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             ARViewContainer(sessionModel: sessionModel)
                 .ignoresSafeArea()
 
-            ScrollView {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(sessionModel.touchStatusText)
+                        .font(.headline)
+                    Text("\(sessionModel.touchRegionText)  \(sessionModel.touchDistanceText)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text("\(sessionModel.fpsText) fps")
+                    .font(.caption.monospacedDigit())
+                Button {
+                    showDebugPanel.toggle()
+                } label: {
+                    Image(systemName: showDebugPanel ? "xmark" : "slider.horizontal.3")
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel(showDebugPanel ? "デバッグを閉じる" : "デバッグを開く")
+            }
+            .padding(12)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+            .padding()
+
+            if showDebugPanel {
+                ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Brain Touch AR Sensor")
                         .font(.headline)
@@ -271,19 +296,20 @@ struct ContentView: View {
                 .background(.black.opacity(0.68), in: RoundedRectangle(cornerRadius: 8))
                 .foregroundStyle(.white)
                 .padding()
+                }
             }
 
-            BrainDepthDetectionOverlay(snapshot: sessionModel.brainDetectionOverlay)
-                .ignoresSafeArea()
+            if showDebugPanel {
+                BrainDepthDetectionOverlay(snapshot: sessionModel.brainDetectionOverlay)
+                    .ignoresSafeArea()
+            }
 
             HandSkeletonOverlay(skeleton: sessionModel.handPose.skeleton)
                 .ignoresSafeArea()
 
-            FingerTipOverlay(point: sessionModel.handPose.fingerTips.indexTip)
-                .ignoresSafeArea()
         }
         .onChange(of: sessionModel.handPose) { handPose in
-            webSocketClient.updateHandPose(handPose)
+            webSocketClient.updateHandPose(handPose, fps: sessionModel.currentFPS)
         }
         .onAppear {
             webSocketClient.onSettingsUpdate = { settings in

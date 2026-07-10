@@ -81,7 +81,7 @@ final class MediaPipeHandLandmarker {
         }
 
         let options = HandLandmarkerOptions()
-        options.runningMode = .image
+        options.runningMode = .video
         options.numHands = 1
         options.minHandDetectionConfidence = 0.45
         options.minHandPresenceConfidence = 0.45
@@ -91,7 +91,7 @@ final class MediaPipeHandLandmarker {
 
         do {
             handLandmarker = try HandLandmarker(options: options)
-            status = "MediaPipe ready"
+            status = "MediaPipe video tracking ready"
         } catch {
             status = "MediaPipe init error: \(error.localizedDescription)"
         }
@@ -124,7 +124,11 @@ final class MediaPipeHandLandmarker {
 
         do {
             let start = Date()
-            let result = try handLandmarker.detect(image: MPImage(uiImage: image))
+            let timestampMs = Int(DispatchTime.now().uptimeNanoseconds / 1_000_000)
+            let result = try handLandmarker.detect(
+                videoFrame: MPImage(uiImage: image),
+                timestampInMilliseconds: timestampMs
+            )
             let inferenceMs = Date().timeIntervalSince(start) * 1000
             guard let firstHand = result.landmarks.first else {
                 return MediaPipeHandDetection(
@@ -185,5 +189,28 @@ final class MediaPipeHandLandmarker {
 extension HandJoint2D {
     var pseudoVisionPointForDepthSampling: CGPoint {
         CGPoint(x: x, y: 1.0 - y)
+    }
+}
+
+final class MediaPipeHandDetectionWorker: @unchecked Sendable {
+    private struct PixelBufferBox: @unchecked Sendable {
+        let value: CVPixelBuffer
+    }
+
+    private let queue = DispatchQueue(label: "brain-touch.hand-detection", qos: .userInitiated)
+    private let landmarker = MediaPipeHandLandmarker()
+
+    var status: String {
+        landmarker.status
+    }
+
+    func detect(
+        pixelBuffer: CVPixelBuffer,
+        completion: @escaping @Sendable (MediaPipeHandDetection) -> Void
+    ) {
+        let box = PixelBufferBox(value: pixelBuffer)
+        queue.async { [landmarker] in
+            completion(landmarker.detect(pixelBuffer: box.value))
+        }
     }
 }

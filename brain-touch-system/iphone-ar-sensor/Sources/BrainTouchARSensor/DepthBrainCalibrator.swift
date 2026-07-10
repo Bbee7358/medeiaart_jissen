@@ -11,6 +11,7 @@ struct DepthCalibrationBaseline {
     let workingRadiusMeters: Double
     let medianDepthMeters: Double
     let sampleCount: Int
+    let cameraTransform: simd_float4x4
 }
 
 struct DepthCalibrationBounds: Equatable {
@@ -85,6 +86,8 @@ enum DepthBrainCalibrationError: Error, CustomStringConvertible {
     case baselineDepthSizeMismatch(expected: PixelSize, actual: PixelSize)
     case noBrainCandidate(sampleCount: Int)
     case invalidCameraIntrinsics
+    case cameraMovedDuringCapture
+    case implausibleBrainSize(width: Double, depth: Double, height: Double)
 
     var description: String {
         switch self {
@@ -102,6 +105,10 @@ enum DepthBrainCalibrationError: Error, CustomStringConvertible {
             return "No brain candidate found in depth difference (\(sampleCount) px)"
         case .invalidCameraIntrinsics:
             return "Camera intrinsics are invalid"
+        case .cameraMovedDuringCapture:
+            return "iPhone moved during baseline capture"
+        case .implausibleBrainSize(let width, let depth, let height):
+            return String(format: "Detected object size is not brain-like: %.2f x %.2f x %.2f m", width, depth, height)
         }
     }
 }
@@ -141,8 +148,15 @@ enum DepthBrainCalibrator {
             depthMapSize: CGSize(width: width, height: height)
         )
 
+        let confidenceMap = depthData.confidenceMap
         CVPixelBufferLockBaseAddress(depthMap, .readOnly)
+        if let confidenceMap {
+            CVPixelBufferLockBaseAddress(confidenceMap, .readOnly)
+        }
         defer {
+            if let confidenceMap {
+                CVPixelBufferUnlockBaseAddress(confidenceMap, .readOnly)
+            }
             CVPixelBufferUnlockBaseAddress(depthMap, .readOnly)
         }
 
@@ -151,9 +165,21 @@ enum DepthBrainCalibrator {
         }
 
         let depthBytesPerRow = CVPixelBufferGetBytesPerRow(depthMap)
+        let confidenceBaseAddress = confidenceMap.flatMap(CVPixelBufferGetBaseAddress)
+        let confidenceBytesPerRow = confidenceMap.map(CVPixelBufferGetBytesPerRow) ?? 0
+        let confidenceMatches = confidenceMap.map {
+            CVPixelBufferGetWidth($0) == width && CVPixelBufferGetHeight($0) == height
+        } ?? false
         var provisionalSamples: [Float] = []
         for y in 0..<height {
             for x in 0..<width where isInsideCircle(x: x, y: y, centerX: centerX, centerY: centerY, radius: provisionalRadius) {
+                guard isConfidenceUsable(
+                    baseAddress: confidenceBaseAddress,
+                    bytesPerRow: confidenceBytesPerRow,
+                    x: x,
+                    y: y,
+                    required: confidenceMatches
+                ) else { continue }
                 let depth = readDepth(
                     depthBaseAddress: depthBaseAddress,
                     bytesPerRow: depthBytesPerRow,
@@ -181,6 +207,13 @@ enum DepthBrainCalibrator {
         var baselineSamples: [Float] = []
         for y in 0..<height {
             for x in 0..<width where isInsideCircle(x: x, y: y, centerX: centerX, centerY: centerY, radius: radiusPixels) {
+                guard isConfidenceUsable(
+                    baseAddress: confidenceBaseAddress,
+                    bytesPerRow: confidenceBytesPerRow,
+                    x: x,
+                    y: y,
+                    required: confidenceMatches
+                ) else { continue }
                 let depth = readDepth(
                     depthBaseAddress: depthBaseAddress,
                     bytesPerRow: depthBytesPerRow,
@@ -205,7 +238,68 @@ enum DepthBrainCalibrator {
             workingRadiusPixels: radiusPixels,
             workingRadiusMeters: workingRadiusMeters,
             medianDepthMeters: Double(baselineMedian),
-            sampleCount: baselineSamples.count
+            sampleCount: baselineSamples.count,
+            cameraTransform: camera.transform
+        )
+    }
+
+    static func mergeBaselines(_ baselines: [DepthCalibrationBaseline]) throws -> DepthCalibrationBaseline {
+        guard let first = baselines.first else {
+            throw DepthBrainCalibrationError.noUsableBaselineSamples
+        }
+        for baseline in baselines {
+            guard baseline.depthMapSize == first.depthMapSize else {
+                throw DepthBrainCalibrationError.baselineDepthSizeMismatch(
+                    expected: first.depthMapSize,
+                    actual: baseline.depthMapSize
+                )
+            }
+            let firstPosition = first.cameraTransform.columns.3
+            let position = baseline.cameraTransform.columns.3
+            let translation = simd_distance(
+                SIMD3<Float>(firstPosition.x, firstPosition.y, firstPosition.z),
+                SIMD3<Float>(position.x, position.y, position.z)
+            )
+            let firstForward = -SIMD3<Float>(
+                first.cameraTransform.columns.2.x,
+                first.cameraTransform.columns.2.y,
+                first.cameraTransform.columns.2.z
+            )
+            let forward = -SIMD3<Float>(
+                baseline.cameraTransform.columns.2.x,
+                baseline.cameraTransform.columns.2.y,
+                baseline.cameraTransform.columns.2.z
+            )
+            if translation > 0.01 || simd_dot(simd_normalize(firstForward), simd_normalize(forward)) < 0.999 {
+                throw DepthBrainCalibrationError.cameraMovedDuringCapture
+            }
+        }
+
+        var mergedDepths = Array(repeating: Float.nan, count: first.depths.count)
+        var valid: [Float] = []
+        for index in mergedDepths.indices {
+            let values = baselines.compactMap { baseline -> Float? in
+                let value = baseline.depths[index]
+                return value.isFinite ? value : nil
+            }
+            if values.count >= max(3, baselines.count / 2),
+               let value = median(values) {
+                mergedDepths[index] = value
+                valid.append(value)
+            }
+        }
+        guard let mergedMedian = median(valid) else {
+            throw DepthBrainCalibrationError.noUsableBaselineSamples
+        }
+        return DepthCalibrationBaseline(
+            depthMapSize: first.depthMapSize,
+            depths: mergedDepths,
+            centerPixel: first.centerPixel,
+            workingRadiusPixels: first.workingRadiusPixels,
+            workingRadiusMeters: first.workingRadiusMeters,
+            medianDepthMeters: Double(mergedMedian),
+            sampleCount: valid.count,
+            cameraTransform: first.cameraTransform
         )
     }
 
@@ -244,8 +338,15 @@ enum DepthBrainCalibrator {
             throw DepthBrainCalibrationError.invalidCameraIntrinsics
         }
 
+        let confidenceMap = depthData.confidenceMap
         CVPixelBufferLockBaseAddress(depthMap, .readOnly)
+        if let confidenceMap {
+            CVPixelBufferLockBaseAddress(confidenceMap, .readOnly)
+        }
         defer {
+            if let confidenceMap {
+                CVPixelBufferUnlockBaseAddress(confidenceMap, .readOnly)
+            }
             CVPixelBufferUnlockBaseAddress(depthMap, .readOnly)
         }
 
@@ -254,6 +355,11 @@ enum DepthBrainCalibrator {
         }
 
         let depthBytesPerRow = CVPixelBufferGetBytesPerRow(depthMap)
+        let confidenceBaseAddress = confidenceMap.flatMap(CVPixelBufferGetBaseAddress)
+        let confidenceBytesPerRow = confidenceMap.map(CVPixelBufferGetBytesPerRow) ?? 0
+        let confidenceMatches = confidenceMap.map {
+            CVPixelBufferGetWidth($0) == width && CVPixelBufferGetHeight($0) == height
+        } ?? false
         let minHeight = Float(minHeightMeters)
         let weakMinHeight = Float(0.004)
         let maxReasonableHeight: Float = 0.60
@@ -271,6 +377,13 @@ enum DepthBrainCalibrator {
 
         for y in 0..<height {
             for x in 0..<width {
+                guard isConfidenceUsable(
+                    baseAddress: confidenceBaseAddress,
+                    bytesPerRow: confidenceBytesPerRow,
+                    x: x,
+                    y: y,
+                    required: confidenceMatches
+                ) else { continue }
                 let index = y * width + x
                 let baselineDepth = baseline.depths[index]
                 guard isValidDepth(baselineDepth) else {
@@ -433,6 +546,15 @@ enum DepthBrainCalibrator {
         let topDepth = Double(topMedianDepth)
         let widthMeters = Double(Float(bounds.widthPixels) * Float(topDepth) / fx)
         let depthMeters = Double(Float(bounds.heightPixels) * Float(topDepth) / fy)
+        guard (0.08...0.35).contains(widthMeters),
+              (0.08...0.40).contains(depthMeters),
+              (0.025...0.25).contains(heightAboveBaseline) else {
+            throw DepthBrainCalibrationError.implausibleBrainSize(
+                width: widthMeters,
+                depth: depthMeters,
+                height: heightAboveBaseline
+            )
+        }
 
         return DepthBrainCalibrationEstimate(
             centerWorld: HandJoint3D(
@@ -483,6 +605,19 @@ enum DepthBrainCalibrator {
     ) -> Float {
         let row = depthBaseAddress.advanced(by: y * bytesPerRow)
         return row.assumingMemoryBound(to: Float32.self)[x]
+    }
+
+    private static func isConfidenceUsable(
+        baseAddress: UnsafeMutableRawPointer?,
+        bytesPerRow: Int,
+        x: Int,
+        y: Int,
+        required: Bool
+    ) -> Bool {
+        guard required else { return true }
+        guard let baseAddress else { return false }
+        let row = baseAddress.advanced(by: y * bytesPerRow)
+        return row.assumingMemoryBound(to: UInt8.self)[x] >= 1
     }
 
     private static func isValidDepth(_ value: Float) -> Bool {
