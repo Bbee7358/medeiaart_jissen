@@ -101,6 +101,12 @@ export type DailyStats = {
 
 export type ServerDiagnostics = {
   clientCount: number;
+  clientRoles?: {
+    total: number;
+    sensors: number;
+    dashboards: number;
+    unknown: number;
+  };
   localAddresses: string[];
   healthUrls: string[];
   websocketUrls: string[];
@@ -143,4 +149,8 @@ export type ServerMessage =
   | {
       type: "serverDiagnostics";
       payload: ServerDiagnostics;
+    }
+  | {
+      type: "hello_required" | "hello_ack" | "settings_forwarded" | "settings_applied";
+      payload: unknown;
     };

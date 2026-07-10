@@ -3,39 +3,38 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { WebSocketServer, type WebSocket } from "ws";
+import Ajv2020Import, { type ErrorObject } from "ajv/dist/2020.js";
+import { WebSocketServer, WebSocket } from "ws";
 
 const PORT = 8787;
 const PERFORMANCE_PORT = 8788;
+const MAX_MESSAGE_BYTES = 256 * 1024;
+const HEARTBEAT_INTERVAL_MS = 15_000;
+const DIAGNOSTICS_INTERVAL_MS = 1_000;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dashboardRoot = path.resolve(__dirname, "..");
 const projectRoot = path.resolve(dashboardRoot, "..");
 const logsDir = path.join(dashboardRoot, "logs");
 const schemaPath = path.join(projectRoot, "shared/touch-event.schema.json");
-const httpServer = http.createServer(handleHttpRequest);
-const performanceHttpServer = http.createServer(handlePerformanceHttpRequest);
-const server = new WebSocketServer({ noServer: true });
-const performanceServer = new WebSocketServer({ noServer: true });
-const clients = new Set<WebSocket>();
-const performanceClients = new Set<WebSocket>();
-const schema = JSON.parse(fs.readFileSync(schemaPath, "utf8")) as { required?: string[] };
-const requiredFields = schema.required ?? [];
 
-process.on("uncaughtException", (error) => {
-  console.error("[process] uncaught exception", error);
-});
-
-process.on("unhandledRejection", (reason) => {
-  console.error("[process] unhandled rejection", reason);
-});
-
+type ClientRole = "unknown" | "iphone_sensor" | "dashboard";
+type ClientState = {
+  role: ClientRole;
+  remote: string;
+  alive: boolean;
+  connectedAt: number;
+};
 type TouchEventMessage = {
   timestamp: number;
   isTouching: boolean;
   confidence: number;
+  region?: unknown;
+  regionLabel?: unknown;
+  surface?: unknown;
+  surfaceLabel?: unknown;
+  durationSec?: unknown;
   [key: string]: unknown;
 };
-
 type SettingsUpdatePayload = {
   touchThresholdCm: number;
   strongTouchThresholdCm: number;
@@ -43,80 +42,54 @@ type SettingsUpdatePayload = {
   confidenceThreshold: number;
   smoothingFrames: number;
 };
-
 type PerformanceOutputSettings = {
   enabled: boolean;
   confirmedOnly: boolean;
   confidenceThreshold: number;
 };
-
-type PerformanceEventMessage = {
-  type: "brain_touch";
-  region: unknown;
-  regionLabel: unknown;
-  surface: unknown;
-  surfaceLabel: unknown;
-  confidence: number;
-  durationSec: unknown;
-  timestamp: number;
-};
-
 type DailyStats = {
   date: string;
   receivedCount: number;
   confirmedTouchCount: number;
 };
 
-type ServerDiagnostics = {
-  clientCount: number;
-  localAddresses: string[];
-  healthUrls: string[];
-  websocketUrls: string[];
-  lastEventAt: number | null;
-  lastEventRemote: string | null;
-  lastHttpRequestAt: number | null;
-  lastHttpRequestRemote: string | null;
-  lastSettingsAt: number | null;
-  lastSettingsRemote: string | null;
-  performanceClientCount: number;
-  performanceWebSocketUrls: string[];
-  performanceOutputEnabled: boolean;
-  lastPerformanceEventAt: number | null;
-  lastPerformanceEventRegion: string | null;
-  lastWarning: string | null;
+const schema = JSON.parse(fs.readFileSync(schemaPath, "utf8")) as object;
+const Ajv2020 = Ajv2020Import as unknown as new (options?: object) => {
+  compile<T>(schema: object): {
+    (data: unknown): data is T;
+    errors?: ErrorObject[] | null;
+  };
 };
+const ajv = new Ajv2020({ allErrors: true, strict: false, allowUnionTypes: true });
+const validateTouchEvent = ajv.compile<TouchEventMessage>(schema);
+const httpServer = http.createServer(handleHttpRequest);
+const performanceHttpServer = http.createServer(handlePerformanceHttpRequest);
+const server = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE_BYTES });
+const performanceServer = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE_BYTES });
+const clients = new Map<WebSocket, ClientState>();
+const performanceClients = new Map<WebSocket, { alive: boolean }>();
 
 let stats: DailyStats = {
   date: formatLocalDate(new Date()),
   receivedCount: 0,
   confirmedTouchCount: 0
 };
-
-let diagnostics: ServerDiagnostics = {
-  clientCount: 0,
-  localAddresses: getLocalIPv4Addresses(),
-  healthUrls: getLocalIPv4Addresses().map((address) => `http://${address}:${PORT}/health`),
-  websocketUrls: getLocalIPv4Addresses().map((address) => `ws://${address}:${PORT}`),
-  lastEventAt: null,
-  lastEventRemote: null,
-  lastHttpRequestAt: null,
-  lastHttpRequestRemote: null,
-  lastSettingsAt: null,
-  lastSettingsRemote: null,
-  performanceClientCount: 0,
-  performanceWebSocketUrls: getLocalIPv4Addresses().map((address) => `ws://${address}:${PERFORMANCE_PORT}`),
-  performanceOutputEnabled: false,
-  lastPerformanceEventAt: null,
-  lastPerformanceEventRegion: null,
-  lastWarning: null
-};
-
 let latestSettings: SettingsUpdatePayload | null = null;
 let performanceOutputSettings: PerformanceOutputSettings = {
   enabled: false,
   confirmedOnly: true,
   confidenceThreshold: 0.75
 };
+let logStream: fs.WriteStream | null = null;
+let logStreamDate: string | null = null;
+let lastEventAt: number | null = null;
+let lastEventRemote: string | null = null;
+let lastSettingsAt: number | null = null;
+let lastSettingsRemote: string | null = null;
+let lastPerformanceEventAt: number | null = null;
+let lastPerformanceEventRegion: string | null = null;
+let lastWarning: string | null = null;
+let shuttingDown = false;
 
 fs.mkdirSync(logsDir, { recursive: true });
 loadTodayStats();
@@ -133,124 +106,12 @@ function getLogPath(date = stats.date) {
 }
 
 function getLocalIPv4Addresses() {
-  return Object.values(os.networkInterfaces())
-    .flatMap((networkInterface) => networkInterface ?? [])
-    .filter((address) => address.family === "IPv4" && !address.internal)
-    .map((address) => address.address);
-}
-
-function refreshNetworkDiagnostics() {
-  const localAddresses = getLocalIPv4Addresses();
-  diagnostics.localAddresses = localAddresses;
-  diagnostics.healthUrls = localAddresses.map((address) => `http://${address}:${PORT}/health`);
-  diagnostics.websocketUrls = localAddresses.map((address) => `ws://${address}:${PORT}`);
-  diagnostics.performanceWebSocketUrls = localAddresses.map((address) => `ws://${address}:${PERFORMANCE_PORT}`);
-  diagnostics.performanceOutputEnabled = performanceOutputSettings.enabled;
-}
-
-function resetStatsIfDateChanged() {
-  const today = formatLocalDate(new Date());
-  if (stats.date === today) return;
-
-  stats = {
-    date: today,
-    receivedCount: 0,
-    confirmedTouchCount: 0
-  };
-  loadTodayStats();
-}
-
-function isConfirmedTouch(event: TouchEventMessage) {
-  return event.isTouching === true && typeof event.confidence === "number" && event.confidence >= 0.75;
-}
-
-function loadTodayStats() {
-  const logPath = getLogPath(stats.date);
-  if (!fs.existsSync(logPath)) return;
-
-  const lines = fs.readFileSync(logPath, "utf8").split("\n").filter(Boolean);
-  stats.receivedCount = 0;
-  stats.confirmedTouchCount = 0;
-
-  for (const line of lines) {
-    try {
-      const event = JSON.parse(line) as TouchEventMessage;
-      stats.receivedCount += 1;
-      if (isConfirmedTouch(event)) {
-        stats.confirmedTouchCount += 1;
-      }
-    } catch {
-      console.warn(`[log] ignored malformed line while loading ${logPath}`);
-    }
-  }
-}
-
-function broadcast(message: string, sender: WebSocket) {
-  for (const client of clients) {
-    if (client === sender) continue;
-    if (client.readyState === client.OPEN) {
-      client.send(message);
-    }
-  }
-}
-
-function sendJson(socket: WebSocket, message: unknown) {
-  if (socket.readyState === socket.OPEN) {
-    socket.send(JSON.stringify(message));
-  }
-}
-
-function sendPerformanceJson(message: unknown) {
-  const json = JSON.stringify(message);
-  for (const client of performanceClients) {
-    if (client.readyState === client.OPEN) {
-      client.send(json);
-    }
-  }
-}
-
-function broadcastStats() {
-  const message = JSON.stringify({
-    type: "dailyStats",
-    payload: stats
-  });
-
-  for (const client of clients) {
-    if (client.readyState === client.OPEN) {
-      client.send(message);
-    }
-  }
-}
-
-function broadcastDiagnostics() {
-  refreshNetworkDiagnostics();
-  diagnostics.clientCount = clients.size;
-  diagnostics.performanceClientCount = performanceClients.size;
-  const message = JSON.stringify({
-    type: "serverDiagnostics",
-    payload: diagnostics
-  });
-
-  for (const client of clients) {
-    if (client.readyState === client.OPEN) {
-      client.send(message);
-    }
-  }
-}
-
-function warnAndBroadcast(message: string) {
-  diagnostics.lastWarning = message;
-  console.warn(message);
-  broadcastDiagnostics();
-}
-
-function validateRequiredFields(event: unknown) {
-  if (!event || typeof event !== "object" || Array.isArray(event)) {
-    return ["<root must be object>"];
-  }
-
-  const record = event as Record<string, unknown>;
-  return requiredFields.filter((field) => !(field in record));
+  return [...new Set(
+    Object.values(os.networkInterfaces())
+      .flatMap((networkInterface) => networkInterface ?? [])
+      .filter((address) => address.family === "IPv4" && !address.internal)
+      .map((address) => address.address)
+  )];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -261,9 +122,133 @@ function isTypedMessage(value: unknown): value is { type: string; payload?: unkn
   return isRecord(value) && typeof value.type === "string";
 }
 
+function sendJson(socket: WebSocket, message: unknown) {
+  if (socket.readyState !== WebSocket.OPEN) return;
+  try {
+    socket.send(JSON.stringify(message));
+  } catch (error) {
+    console.warn("[ws] send failed", error);
+    socket.terminate();
+  }
+}
+
+function sendToRole(role: ClientRole, message: unknown, except?: WebSocket) {
+  for (const [socket, state] of clients) {
+    if (socket !== except && state.role === role) sendJson(socket, message);
+  }
+}
+
+function sendToDashboards(message: unknown) {
+  sendToRole("dashboard", message);
+}
+
+function clientCounts() {
+  let sensors = 0;
+  let dashboards = 0;
+  let unknown = 0;
+  for (const state of clients.values()) {
+    if (state.role === "iphone_sensor") sensors += 1;
+    else if (state.role === "dashboard") dashboards += 1;
+    else unknown += 1;
+  }
+  return { total: clients.size, sensors, dashboards, unknown };
+}
+
+function diagnosticsPayload() {
+  const localAddresses = getLocalIPv4Addresses();
+  return {
+    clientCount: clients.size,
+    clientRoles: clientCounts(),
+    localAddresses,
+    healthUrls: localAddresses.map((address) => `http://${address}:${PORT}/health`),
+    websocketUrls: localAddresses.map((address) => `ws://${address}:${PORT}`),
+    lastEventAt,
+    lastEventRemote,
+    lastSettingsAt,
+    lastSettingsRemote,
+    performanceClientCount: performanceClients.size,
+    performanceWebSocketUrls: localAddresses.map((address) => `ws://${address}:${PERFORMANCE_PORT}`),
+    performanceOutputEnabled: performanceOutputSettings.enabled,
+    lastPerformanceEventAt,
+    lastPerformanceEventRegion,
+    lastWarning
+  };
+}
+
+function broadcastDiagnostics() {
+  sendToDashboards({ type: "serverDiagnostics", payload: diagnosticsPayload() });
+}
+
+function warn(message: string) {
+  lastWarning = message;
+  console.warn(message);
+  broadcastDiagnostics();
+}
+
+function isConfirmedTouch(event: TouchEventMessage) {
+  return event.isTouching && event.confidence >= 0.75;
+}
+
+function resetStatsIfDateChanged() {
+  const today = formatLocalDate(new Date());
+  if (stats.date === today) return;
+  logStream?.end();
+  logStream = null;
+  logStreamDate = null;
+  stats = { date: today, receivedCount: 0, confirmedTouchCount: 0 };
+  loadTodayStats();
+}
+
+function loadTodayStats() {
+  const logPath = getLogPath();
+  if (!fs.existsSync(logPath)) return;
+  for (const line of fs.readFileSync(logPath, "utf8").split("\n")) {
+    if (!line) continue;
+    try {
+      const event = JSON.parse(line) as TouchEventMessage;
+      stats.receivedCount += 1;
+      if (isConfirmedTouch(event)) stats.confirmedTouchCount += 1;
+    } catch {
+      console.warn(`[log] malformed historical line in ${logPath}`);
+    }
+  }
+}
+
+function currentLogStream() {
+  if (logStream && logStreamDate === stats.date) return logStream;
+  logStream?.end();
+  logStreamDate = stats.date;
+  logStream = fs.createWriteStream(getLogPath(), { flags: "a", encoding: "utf8" });
+  logStream.on("error", (error) => fatal("[log] write stream failed", error));
+  return logStream;
+}
+
+function appendEvent(event: TouchEventMessage) {
+  resetStatsIfDateChanged();
+  const stream = currentLogStream();
+  if (!stream.write(`${JSON.stringify(event)}\n`)) {
+    for (const [socket, state] of clients) {
+      if (state.role === "iphone_sensor") socket.pause();
+    }
+    stream.once("drain", () => {
+      for (const [socket, state] of clients) {
+        if (state.role === "iphone_sensor") socket.resume();
+      }
+    });
+  }
+  stats.receivedCount += 1;
+  if (isConfirmedTouch(event)) stats.confirmedTouchCount += 1;
+}
+
+function formatAjvErrors(errors: ErrorObject[] | null | undefined) {
+  return (errors ?? [])
+    .slice(0, 6)
+    .map((error) => `${error.instancePath || "/"} ${error.message ?? "invalid"}`)
+    .join("; ");
+}
+
 function validateSettingsPayload(payload: unknown): SettingsUpdatePayload | null {
   if (!isRecord(payload)) return null;
-
   const settings = {
     touchThresholdCm: Number(payload.touchThresholdCm),
     strongTouchThresholdCm: Number(payload.strongTouchThresholdCm),
@@ -271,55 +256,36 @@ function validateSettingsPayload(payload: unknown): SettingsUpdatePayload | null
     confidenceThreshold: Number(payload.confidenceThreshold),
     smoothingFrames: Math.round(Number(payload.smoothingFrames))
   };
-
-  const values = Object.values(settings);
-  if (values.some((value) => !Number.isFinite(value))) {
-    return null;
-  }
-
+  if (Object.values(settings).some((value) => !Number.isFinite(value))) return null;
   if (
-    settings.touchThresholdCm < 0.5 ||
-    settings.touchThresholdCm > 30 ||
+    settings.touchThresholdCm < 0.5 || settings.touchThresholdCm > 20 ||
     settings.strongTouchThresholdCm < 0.5 ||
-    settings.strongTouchThresholdCm > 30 ||
-    settings.dwellTimeSec < 0 ||
-    settings.dwellTimeSec > 5 ||
-    settings.confidenceThreshold < 0 ||
-    settings.confidenceThreshold > 1 ||
-    settings.smoothingFrames < 1 ||
-    settings.smoothingFrames > 30
-  ) {
-    return null;
-  }
-
+    settings.strongTouchThresholdCm > settings.touchThresholdCm ||
+    settings.dwellTimeSec < 0 || settings.dwellTimeSec > 3 ||
+    settings.confidenceThreshold < 0 || settings.confidenceThreshold > 1 ||
+    settings.smoothingFrames < 1 || settings.smoothingFrames > 30
+  ) return null;
   return settings;
 }
 
-function validatePerformanceOutputSettings(payload: unknown): PerformanceOutputSettings | null {
+function validatePerformanceSettings(payload: unknown): PerformanceOutputSettings | null {
   if (!isRecord(payload)) return null;
-
-  const settings = {
-    enabled: Boolean(payload.enabled),
-    confirmedOnly: payload.confirmedOnly === undefined ? true : Boolean(payload.confirmedOnly),
-    confidenceThreshold: Number(payload.confidenceThreshold)
-  };
-
-  if (!Number.isFinite(settings.confidenceThreshold)) return null;
-  if (settings.confidenceThreshold < 0 || settings.confidenceThreshold > 1) return null;
-
-  return settings;
-}
-
-function shouldSendPerformanceEvent(event: TouchEventMessage) {
-  if (!performanceOutputSettings.enabled) return false;
-  if (!performanceOutputSettings.confirmedOnly) return true;
-  return event.isTouching === true
-    && typeof event.confidence === "number"
-    && event.confidence >= performanceOutputSettings.confidenceThreshold;
-}
-
-function toPerformanceEvent(event: TouchEventMessage): PerformanceEventMessage {
+  const confidenceThreshold = Number(payload.confidenceThreshold);
+  if (!Number.isFinite(confidenceThreshold) || confidenceThreshold < 0 || confidenceThreshold > 1) return null;
   return {
+    enabled: payload.enabled === true,
+    confirmedOnly: payload.confirmedOnly !== false,
+    confidenceThreshold
+  };
+}
+
+function maybeBroadcastPerformanceEvent(event: TouchEventMessage) {
+  if (!performanceOutputSettings.enabled) return;
+  if (
+    performanceOutputSettings.confirmedOnly &&
+    (!event.isTouching || event.confidence < performanceOutputSettings.confidenceThreshold)
+  ) return;
+  const message = {
     type: "brain_touch",
     region: event.region,
     regionLabel: event.regionLabel,
@@ -329,284 +295,270 @@ function toPerformanceEvent(event: TouchEventMessage): PerformanceEventMessage {
     durationSec: event.durationSec,
     timestamp: event.timestamp
   };
+  for (const socket of performanceClients.keys()) sendJson(socket, message);
+  lastPerformanceEventAt = Date.now();
+  lastPerformanceEventRegion = typeof event.region === "string" ? event.region : null;
 }
 
-function maybeBroadcastPerformanceEvent(event: TouchEventMessage) {
-  if (!shouldSendPerformanceEvent(event)) return;
-
-  sendPerformanceJson(toPerformanceEvent(event));
-  diagnostics.lastPerformanceEventAt = Date.now();
-  diagnostics.lastPerformanceEventRegion = typeof event.region === "string" ? event.region : null;
-}
-
-function appendEvent(event: TouchEventMessage) {
-  resetStatsIfDateChanged();
-
-  fs.appendFileSync(getLogPath(), `${JSON.stringify(event)}\n`, "utf8");
-  stats.receivedCount += 1;
-  if (isConfirmedTouch(event)) {
-    stats.confirmedTouchCount += 1;
+function registerRole(socket: WebSocket, role: ClientRole) {
+  const state = clients.get(socket);
+  if (!state) return;
+  state.role = role;
+  sendJson(socket, { type: "hello_ack", payload: { role, serverTime: Date.now() } });
+  if (role === "dashboard") {
+    sendJson(socket, { type: "dailyStats", payload: stats });
+    sendJson(socket, { type: "serverDiagnostics", payload: diagnosticsPayload() });
+  } else if (role === "iphone_sensor" && latestSettings) {
+    sendJson(socket, { type: "settings_update", payload: latestSettings });
   }
+  broadcastDiagnostics();
+}
+
+function handleMessage(socket: WebSocket, raw: Buffer, remote: string) {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw.toString("utf8")) as unknown;
+  } catch {
+    warn(`[ws] invalid JSON from ${remote}`);
+    return;
+  }
+  const state = clients.get(socket);
+  if (!state) return;
+
+  if (isTypedMessage(parsed)) {
+    if (parsed.type === "hello") {
+      const requested = isRecord(parsed.payload) ? parsed.payload.role : undefined;
+      if (requested === "iphone_sensor" || requested === "dashboard") {
+        registerRole(socket, requested);
+      } else {
+        warn(`[ws] invalid role from ${remote}`);
+      }
+      return;
+    }
+    if (parsed.type === "ping") {
+      sendJson(socket, { type: "pong", timestamp: Date.now() });
+      return;
+    }
+    if (parsed.type === "pong") {
+      state.alive = true;
+      return;
+    }
+    if (parsed.type === "settings_update") {
+      if (state.role !== "dashboard") {
+        warn(`[ws] settings_update rejected from non-dashboard ${remote}`);
+        return;
+      }
+      const settings = validateSettingsPayload(parsed.payload);
+      if (!settings) {
+        warn(`[ws] invalid settings_update from ${remote}`);
+        return;
+      }
+      latestSettings = settings;
+      lastSettingsAt = Date.now();
+      lastSettingsRemote = remote;
+      lastWarning = null;
+      sendToRole("iphone_sensor", { type: "settings_update", payload: settings });
+      sendJson(socket, { type: "settings_forwarded", payload: { timestamp: Date.now() } });
+      broadcastDiagnostics();
+      return;
+    }
+    if (parsed.type === "settings_applied") {
+      if (state.role === "iphone_sensor") {
+        sendToDashboards({ type: "settings_applied", payload: parsed.payload });
+      }
+      return;
+    }
+    if (parsed.type === "performance_output_settings") {
+      if (state.role !== "dashboard") return;
+      const settings = validatePerformanceSettings(parsed.payload);
+      if (!settings) {
+        warn(`[ws] invalid performance settings from ${remote}`);
+        return;
+      }
+      performanceOutputSettings = settings;
+      broadcastDiagnostics();
+      return;
+    }
+    if (parsed.type === "touch_event") parsed = parsed.payload;
+    else if (parsed.type === "serverDiagnostics" || parsed.type === "dailyStats") return;
+    else {
+      warn(`[ws] unknown message type from ${remote}: ${parsed.type}`);
+      return;
+    }
+  }
+
+  // Legacy iPhone builds send a bare event before the role handshake.
+  if (state.role === "unknown") state.role = "iphone_sensor";
+  if (state.role !== "iphone_sensor") {
+    warn(`[ws] touch event rejected from non-sensor ${remote}`);
+    return;
+  }
+  if (!validateTouchEvent(parsed)) {
+    warn(`[ws] schema validation failed from ${remote}: ${formatAjvErrors(validateTouchEvent.errors)}`);
+    return;
+  }
+
+  const event = parsed as TouchEventMessage;
+  appendEvent(event);
+  lastEventAt = Date.now();
+  lastEventRemote = remote;
+  lastWarning = null;
+  maybeBroadcastPerformanceEvent(event);
+  sendToDashboards({ type: "touch_event", payload: event });
+  sendToDashboards({ type: "dailyStats", payload: stats });
 }
 
 function buildHealthPayload() {
-  refreshNetworkDiagnostics();
-
   return {
     ok: true,
     service: "brain-touch-websocket",
     port: PORT,
     now: new Date().toISOString(),
     stats,
-    diagnostics: {
-      ...diagnostics,
-      clientCount: clients.size,
-      performanceClientCount: performanceClients.size
-    },
+    diagnostics: diagnosticsPayload(),
     latestSettings,
-    performanceOutputSettings
+    performanceOutputSettings,
+    memory: process.memoryUsage()
   };
 }
 
 function handleHttpRequest(request: http.IncomingMessage, response: http.ServerResponse) {
-  const remote = `${request.socket.remoteAddress ?? "unknown"}:${request.socket.remotePort ?? "unknown"}`;
-  diagnostics.lastHttpRequestAt = Date.now();
-  diagnostics.lastHttpRequestRemote = remote;
-  console.log(`[http] ${remote} ${request.method ?? "UNKNOWN"} ${request.url ?? "/"}`);
-
   if (request.url === "/health" || request.url === "/health/") {
-    const body = JSON.stringify(buildHealthPayload(), null, 2);
     response.writeHead(200, {
       "Access-Control-Allow-Origin": "*",
       "Cache-Control": "no-store",
       "Content-Type": "application/json; charset=utf-8"
     });
-    response.end(body);
-    broadcastDiagnostics();
+    response.end(JSON.stringify(buildHealthPayload()));
     return;
   }
-
-  const healthUrls = buildHealthPayload().diagnostics.healthUrls;
-  const websocketUrls = buildHealthPayload().diagnostics.websocketUrls;
-  const body = [
+  const diagnostics = diagnosticsPayload();
+  response.writeHead(200, {
+    "Access-Control-Allow-Origin": "*",
+    "Cache-Control": "no-store",
+    "Content-Type": "text/plain; charset=utf-8"
+  });
+  response.end([
     "Brain Touch WebSocket server is running.",
     "",
-    "Health check URLs:",
-    ...healthUrls.map((url) => `- ${url}`),
-    "",
-    "iPhone WebSocket URLs:",
-    ...websocketUrls.map((url) => `- ${url}`)
-  ].join("\n");
-
-  response.writeHead(200, {
-    "Access-Control-Allow-Origin": "*",
-    "Cache-Control": "no-store",
-    "Content-Type": "text/plain; charset=utf-8"
-  });
-  response.end(body);
-  broadcastDiagnostics();
+    ...diagnostics.healthUrls.map((url) => `Health: ${url}`),
+    ...diagnostics.websocketUrls.map((url) => `WebSocket: ${url}`)
+  ].join("\n"));
 }
 
-function handlePerformanceHttpRequest(request: http.IncomingMessage, response: http.ServerResponse) {
-  const body = [
-    "Brain Touch performance WebSocket relay is running.",
-    "",
-    `WebSocket port: ${PERFORMANCE_PORT}`,
-    "Connect TouchDesigner / p5.js / Processing / Unity clients here.",
-    "",
-    ...getLocalIPv4Addresses().map((address) => `- ws://${address}:${PERFORMANCE_PORT}`)
-  ].join("\n");
-
-  response.writeHead(200, {
-    "Access-Control-Allow-Origin": "*",
-    "Cache-Control": "no-store",
-    "Content-Type": "text/plain; charset=utf-8"
-  });
-  response.end(body);
+function handlePerformanceHttpRequest(_request: http.IncomingMessage, response: http.ServerResponse) {
+  response.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+  response.end(`Brain Touch performance relay: ws://<mac-host>:${PERFORMANCE_PORT}\n`);
 }
 
 server.on("connection", (socket, request) => {
-  clients.add(socket);
   const remote = `${request.socket.remoteAddress ?? "unknown"}:${request.socket.remotePort ?? "unknown"}`;
-  console.log(`[ws] connected ${remote}. clients=${clients.size}`);
-  socket.send(JSON.stringify({ type: "dailyStats", payload: stats }));
-  socket.send(JSON.stringify({ type: "serverDiagnostics", payload: { ...diagnostics, clientCount: clients.size } }));
-  if (latestSettings) {
-    sendJson(socket, { type: "settings_update", payload: latestSettings });
-  }
-  broadcastDiagnostics();
-
-  socket.on("message", (data) => {
-    const message = data.toString();
-    console.log(`[ws] message from ${remote}: ${message.slice(0, 200)}`);
-    let parsed: unknown;
-
-    try {
-      parsed = JSON.parse(message) as unknown;
-    } catch {
-      warnAndBroadcast(`[ws] ignored invalid JSON from ${remote}`);
-      return;
-    }
-
-    if (isTypedMessage(parsed)) {
-      if (parsed.type === "ping") {
-        sendJson(socket, { type: "pong", timestamp: Date.now() });
-        return;
-      }
-
-      if (parsed.type === "pong") {
-        return;
-      }
-
-      if (parsed.type === "settings_update") {
-        const settings = validateSettingsPayload(parsed.payload);
-        if (!settings) {
-          warnAndBroadcast(`[ws] ignored invalid settings_update from ${remote}`);
-          return;
-        }
-
-        latestSettings = settings;
-        diagnostics.lastSettingsAt = Date.now();
-        diagnostics.lastSettingsRemote = remote;
-        diagnostics.lastWarning = null;
-        broadcast(JSON.stringify({ type: "settings_update", payload: settings }), socket);
-        broadcastDiagnostics();
-        return;
-      }
-
-      if (parsed.type === "performance_output_settings") {
-        const settings = validatePerformanceOutputSettings(parsed.payload);
-        if (!settings) {
-          warnAndBroadcast(`[ws] ignored invalid performance_output_settings from ${remote}`);
-          return;
-        }
-
-        performanceOutputSettings = settings;
-        diagnostics.performanceOutputEnabled = settings.enabled;
-        diagnostics.lastWarning = null;
-        broadcastDiagnostics();
-        return;
-      }
-
-      if (parsed.type === "touch_event") {
-        parsed = parsed.payload;
-      } else {
-        warnAndBroadcast(`[ws] ignored unknown message type from ${remote}: ${parsed.type}`);
-        return;
-      }
-    }
-
-    const event = parsed as TouchEventMessage;
-
-    const missingFields = validateRequiredFields(event);
-    if (missingFields.length > 0) {
-      warnAndBroadcast(`[ws] ignored event from ${remote}; missing required fields: ${missingFields.join(", ")}`);
-      return;
-    }
-
-    appendEvent(event);
-    diagnostics.lastEventAt = Date.now();
-    diagnostics.lastEventRemote = remote;
-    diagnostics.lastWarning = null;
-    maybeBroadcastPerformanceEvent(event);
-    broadcast(JSON.stringify({ type: "touch_event", payload: event }), socket);
-    broadcastStats();
-    broadcastDiagnostics();
+  clients.set(socket, { role: "unknown", remote, alive: true, connectedAt: Date.now() });
+  sendJson(socket, { type: "hello_required", payload: { roles: ["iphone_sensor", "dashboard"] } });
+  socket.on("pong", () => {
+    const state = clients.get(socket);
+    if (state) state.alive = true;
   });
-
-  socket.on("close", (code, reason) => {
+  socket.on("message", (data, isBinary) => {
+    if (isBinary) {
+      warn(`[ws] binary message rejected from ${remote}`);
+      return;
+    }
+    const raw = Buffer.isBuffer(data)
+      ? data
+      : Array.isArray(data)
+        ? Buffer.concat(data)
+        : Buffer.from(data as ArrayBuffer);
+    handleMessage(socket, raw, remote);
+  });
+  socket.on("close", () => {
     clients.delete(socket);
-    console.log(`[ws] disconnected ${remote}. code=${code} reason=${reason.toString()} clients=${clients.size}`);
     broadcastDiagnostics();
   });
-
-  socket.on("error", (error) => {
-    console.error(`[ws] error from ${remote}`, error);
-  });
+  socket.on("error", (error) => console.warn(`[ws] ${remote}`, error.message));
+  broadcastDiagnostics();
 });
 
-performanceServer.on("connection", (socket, request) => {
-  performanceClients.add(socket);
-  const remote = `${request.socket.remoteAddress ?? "unknown"}:${request.socket.remotePort ?? "unknown"}`;
-  console.log(`[performance-ws] connected ${remote}. clients=${performanceClients.size}`);
-  sendJson(socket, {
-    type: "performance_status",
-    enabled: performanceOutputSettings.enabled,
-    confirmedOnly: performanceOutputSettings.confirmedOnly,
-    confidenceThreshold: performanceOutputSettings.confidenceThreshold
+performanceServer.on("connection", (socket) => {
+  performanceClients.set(socket, { alive: true });
+  socket.on("pong", () => {
+    const state = performanceClients.get(socket);
+    if (state) state.alive = true;
   });
-  broadcastDiagnostics();
-
-  socket.on("message", (data) => {
-    const message = data.toString();
-    if (message === "ping") {
-      sendJson(socket, { type: "pong", timestamp: Date.now() });
-      return;
-    }
-
-    try {
-      const parsed = JSON.parse(message) as unknown;
-      if (isTypedMessage(parsed) && parsed.type === "ping") {
-        sendJson(socket, { type: "pong", timestamp: Date.now() });
-      }
-    } catch {
-      // Performance clients may be receive-only. Ignore non-JSON messages.
-    }
-  });
-
-  socket.on("close", (code, reason) => {
-    performanceClients.delete(socket);
-    console.log(`[performance-ws] disconnected ${remote}. code=${code} reason=${reason.toString()} clients=${performanceClients.size}`);
-    broadcastDiagnostics();
-  });
-
-  socket.on("error", (error) => {
-    console.error(`[performance-ws] error from ${remote}`, error);
-  });
+  socket.on("close", () => performanceClients.delete(socket));
+  socket.on("error", (error) => console.warn("[performance-ws]", error.message));
+  sendJson(socket, { type: "performance_status", payload: performanceOutputSettings });
 });
 
 httpServer.on("upgrade", (request, socket, head) => {
-  const remote = `${request.socket.remoteAddress ?? "unknown"}:${request.socket.remotePort ?? "unknown"}`;
-  console.log(`[ws] upgrade request from ${remote} ${request.url ?? "/"}`);
-
   server.handleUpgrade(request, socket, head, (webSocket) => {
     server.emit("connection", webSocket, request);
   });
 });
-
 performanceHttpServer.on("upgrade", (request, socket, head) => {
-  const remote = `${request.socket.remoteAddress ?? "unknown"}:${request.socket.remotePort ?? "unknown"}`;
-  console.log(`[performance-ws] upgrade request from ${remote} ${request.url ?? "/"}`);
-
   performanceServer.handleUpgrade(request, socket, head, (webSocket) => {
     performanceServer.emit("connection", webSocket, request);
   });
 });
 
-httpServer.on("listening", () => {
-  refreshNetworkDiagnostics();
-  console.log(`[ws] brain touch server listening on ws://0.0.0.0:${PORT}`);
-  for (const url of diagnostics.healthUrls) {
-    console.log(`[http] health check available at ${url}`);
+const heartbeat = setInterval(() => {
+  for (const [socket, state] of clients) {
+    if (!state.alive) {
+      socket.terminate();
+      clients.delete(socket);
+      continue;
+    }
+    state.alive = false;
+    socket.ping();
   }
-});
-
-performanceHttpServer.on("listening", () => {
-  console.log(`[performance-ws] relay listening on ws://0.0.0.0:${PERFORMANCE_PORT}`);
-  for (const address of getLocalIPv4Addresses()) {
-    console.log(`[performance-ws] external clients can connect to ws://${address}:${PERFORMANCE_PORT}`);
+  for (const [socket, state] of performanceClients) {
+    if (!state.alive) {
+      socket.terminate();
+      performanceClients.delete(socket);
+      continue;
+    }
+    state.alive = false;
+    socket.ping();
   }
-});
+}, HEARTBEAT_INTERVAL_MS);
+heartbeat.unref();
 
-httpServer.on("error", (error) => {
-  console.error("[ws] server error", error);
-  process.exitCode = 1;
-});
+const diagnosticsTimer = setInterval(broadcastDiagnostics, DIAGNOSTICS_INTERVAL_MS);
+diagnosticsTimer.unref();
 
-performanceHttpServer.on("error", (error) => {
-  console.error("[performance-ws] server error", error);
-  process.exitCode = 1;
-});
+function shutdown(exitCode = 0) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  clearInterval(heartbeat);
+  clearInterval(diagnosticsTimer);
+  for (const socket of clients.keys()) socket.close(1001, "server shutdown");
+  for (const socket of performanceClients.keys()) socket.close(1001, "server shutdown");
+  server.close();
+  performanceServer.close();
+  logStream?.end();
+  let pending = 2;
+  const done = () => {
+    pending -= 1;
+    if (pending === 0) process.exit(exitCode);
+  };
+  httpServer.close(done);
+  performanceHttpServer.close(done);
+  setTimeout(() => process.exit(exitCode), 2_000).unref();
+}
 
-httpServer.listen(PORT, "0.0.0.0");
-performanceHttpServer.listen(PERFORMANCE_PORT, "0.0.0.0");
+function fatal(message: string, error: unknown) {
+  console.error(message, error);
+  shutdown(1);
+}
+
+process.once("SIGINT", () => shutdown(0));
+process.once("SIGTERM", () => shutdown(0));
+process.once("uncaughtException", (error) => fatal("[process] uncaught exception", error));
+process.once("unhandledRejection", (reason) => fatal("[process] unhandled rejection", reason));
+
+httpServer.listen(PORT, "0.0.0.0", () => {
+  console.log(`Brain Touch WebSocket server listening on 0.0.0.0:${PORT}`);
+});
+performanceHttpServer.listen(PERFORMANCE_PORT, "0.0.0.0", () => {
+  console.log(`Performance relay listening on 0.0.0.0:${PERFORMANCE_PORT}`);
+});

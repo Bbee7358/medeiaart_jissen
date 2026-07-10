@@ -10,10 +10,12 @@
     "net": "tsx scripts/network-diagnostics.ts",
     "http-test": "tsx scripts/simple-http-test.ts",
     "http-test:8001": "HTTP_TEST_PORT=8001 tsx scripts/simple-http-test.ts",
+    "test": "tsx --test tests/**/*.test.ts",
     "build": "tsc -b && vite build",
     "start": "tsx server/index.ts"
   },
   "dependencies": {
+    "ajv": "^8.17.1",
     "@vitejs/plugin-react": "^4.3.4",
     "vite": "^6.0.7",
     "react": "^19.0.0",

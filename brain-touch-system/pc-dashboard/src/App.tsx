@@ -102,9 +102,9 @@ function loadThresholdSettings(): ThresholdSettings {
 
     const parsed = JSON.parse(raw) as Partial<ThresholdSettings>;
     return {
-      touchThresholdCm: clamp(Number(parsed.touchThresholdCm ?? DEFAULT_THRESHOLDS.touchThresholdCm), 0.5, 30),
-      strongTouchThresholdCm: clamp(Number(parsed.strongTouchThresholdCm ?? DEFAULT_THRESHOLDS.strongTouchThresholdCm), 0.5, 30),
-      dwellTimeSeconds: clamp(Number(parsed.dwellTimeSeconds ?? DEFAULT_THRESHOLDS.dwellTimeSeconds), 0, 5),
+      touchThresholdCm: clamp(Number(parsed.touchThresholdCm ?? DEFAULT_THRESHOLDS.touchThresholdCm), 0.5, 20),
+      strongTouchThresholdCm: clamp(Number(parsed.strongTouchThresholdCm ?? DEFAULT_THRESHOLDS.strongTouchThresholdCm), 0.5, 20),
+      dwellTimeSeconds: clamp(Number(parsed.dwellTimeSeconds ?? DEFAULT_THRESHOLDS.dwellTimeSeconds), 0, 3),
       confidenceThreshold: clamp(Number(parsed.confidenceThreshold ?? DEFAULT_THRESHOLDS.confidenceThreshold), 0, 1),
       smoothingFrames: Math.round(clamp(Number(parsed.smoothingFrames ?? DEFAULT_THRESHOLDS.smoothingFrames), 1, 30))
     };
@@ -249,6 +249,7 @@ function App() {
 
       socket.addEventListener("open", () => {
         setStatus("connected");
+        socket?.send(JSON.stringify({ type: "hello", payload: { role: "dashboard" } }));
         sendSettingsUpdate(buildSettingsPayload(thresholdsRef.current));
         sendPerformanceOutputSettings(performanceOutputRef.current);
       });
@@ -281,7 +282,23 @@ function App() {
             return;
           }
 
-          const touchEvent = isTouchEventEnvelope(parsed) ? parsed.payload : parsed;
+          if ("type" in parsed && parsed.type === "settings_forwarded") {
+            setSettingsSendStatus("forwarded to iPhone");
+            return;
+          }
+
+          if ("type" in parsed && parsed.type === "settings_applied") {
+            setSettingsSendStatus("applied on iPhone");
+            return;
+          }
+
+          if ("type" in parsed && (parsed.type === "hello_required" || parsed.type === "hello_ack")) {
+            return;
+          }
+
+          const touchEvent: TouchEventMessage = isTouchEventEnvelope(parsed)
+            ? parsed.payload
+            : parsed as TouchEventMessage;
 
           setLastEvent(touchEvent);
           setLastReceivedAt(Date.now());
