@@ -274,18 +274,11 @@ struct ContentView: View {
             BrainDepthDetectionOverlay(snapshot: sessionModel.brainDetectionOverlay)
                 .ignoresSafeArea()
 
-            STLProjectionOverlay(snapshot: sessionModel.stlProjectionOverlay)
-                .ignoresSafeArea()
-
             HandSkeletonOverlay(skeleton: sessionModel.handPose.skeleton)
                 .ignoresSafeArea()
 
             FingerTipOverlay(point: sessionModel.handPose.fingerTips.indexTip)
                 .ignoresSafeArea()
-
-            DepthDiagnosticBadge(snapshot: sessionModel.brainDetectionOverlay)
-                .padding(.top, 52)
-                .padding(.horizontal, 10)
         }
         .onChange(of: sessionModel.handPose) { handPose in
             webSocketClient.updateHandPose(handPose)

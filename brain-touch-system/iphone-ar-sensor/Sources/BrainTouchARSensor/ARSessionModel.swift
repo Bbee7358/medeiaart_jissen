@@ -41,7 +41,6 @@ final class ARSessionModel: NSObject, ObservableObject {
     @Published var stlScaleText = "-"
     @Published var stlScaledSizeText = "-"
     @Published var stlProjectionText = "-"
-    @Published var stlProjectionOverlay = STLProjectionOverlaySnapshot.empty
     @Published var stlNearestDistanceText = "-"
     @Published var stlNearestSurfaceText = "-"
 
@@ -93,7 +92,6 @@ final class ARSessionModel: NSObject, ObservableObject {
         hasConfirmedBrainCalibration = false
         depthCalibrationBaseline = nil
         brainDetectionOverlay = .empty
-        stlProjectionOverlay = .empty
         stlProjectionText = "-"
         autoCalibrationText = "waiting for stable empty view"
         applyCalibration(BrainCalibrationStore.reset(), save: false)
@@ -165,7 +163,6 @@ extension ARSessionModel: ARSessionDelegate {
             self.updateFrameMetrics(timestamp: timestamp, hasDepth: hasDepth)
             self.processAutoDepthCalibration(depthData: depthData, camera: camera, timestamp: timestamp)
             self.processDepthCalibrationIfNeeded(depthData: depthData, camera: camera)
-            self.updateSTLProjection(camera: camera)
             self.detectHandPoseIfNeeded(
                 pixelBuffer: pixelBuffer,
                 depthData: depthData,
@@ -501,9 +498,10 @@ private extension ARSessionModel {
         )
         let smoothedIndexTip3D = indexTip3DSmoother.append(contactResolution.rawIndexTip3D)
         updateSTLNearestDebug(hit: contactResolution.nearestSurfaceHit, fallbackPoint: smoothedIndexTip3D)
+        let touchPoint = contactResolution.nearestSurfaceHit == nil ? nil : smoothedIndexTip3D
         let touch = touchDetector.update(
-            indexTip3D: smoothedIndexTip3D,
-            hasDepth: contactResolution.indexDepthSample != nil || contactResolution.nearestSurfaceHit != nil,
+            indexTip3D: touchPoint,
+            hasDepth: contactResolution.nearestSurfaceHit != nil,
             timestamp: timestamp,
             meshHit: contactResolution.nearestSurfaceHit
         )
@@ -607,7 +605,6 @@ private extension ARSessionModel {
             stlScaleText = "-"
             stlScaledSizeText = "-"
             stlProjectionText = "-"
-            stlProjectionOverlay = .empty
             stlNearestDistanceText = "-"
             stlNearestSurfaceText = "-"
             return
@@ -641,32 +638,7 @@ private extension ARSessionModel {
             scaled.height,
             calibration.meshYawDegrees
         )
-    }
-
-    func updateSTLProjection(camera: ARCamera) {
-        guard hasConfirmedBrainCalibration else {
-            stlProjectionOverlay = .empty
-            stlProjectionText = "-"
-            return
-        }
-
-        let overlay = BrainSTLProjector.makeOverlay(
-            metadata: brainSTLMetadata,
-            calibration: calibration,
-            camera: camera
-        )
-        stlProjectionOverlay = overlay
-        guard overlay.sourceSampleCount > 0 else {
-            stlProjectionText = "-"
-            return
-        }
-
-        stlProjectionText = String(
-            format: "%d/%d pts, %@",
-            overlay.projectedPointCount,
-            overlay.sourceSampleCount,
-            overlay.mapping
-        )
+        stlProjectionText = "off for 30fps"
     }
 
     func updateSTLNearestDebug(hit: NearestSurfaceHit?, fallbackPoint: HandJoint3D?) {

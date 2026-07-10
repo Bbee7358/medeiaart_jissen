@@ -30,7 +30,6 @@ struct BrainSTLMetadata: Equatable {
     let resourceName: String
     let triangleCount: Int
     let boundingBox: STLBoundingBox
-    let sampleVerticesRaw: [SIMD3<Float>]
     let touchVerticesRaw: [SIMD3<Float>]
 
     func scaleForRealWidthMeters(_ realWidthMeters: Double) -> Double {
@@ -75,8 +74,7 @@ enum BrainSTLMeshLoadError: Error, CustomStringConvertible {
 enum BrainSTLMeshLoader {
     static let bundledResourceName = "brain_model"
     static let bundledResourceExtension = "stl"
-    static let maxProjectionSampleVertexCount = 3200
-    static let maxTouchSampleVertexCount = 24000
+    static let maxTouchSampleVertexCount = 12000
 
     static func loadBundledMetadata() throws -> BrainSTLMetadata {
         try loadMetadata(
@@ -128,12 +126,9 @@ enum BrainSTLMeshLoader {
         var maxX = -Float.greatestFiniteMagnitude
         var maxY = -Float.greatestFiniteMagnitude
         var maxZ = -Float.greatestFiniteMagnitude
-        var sampleVertices: [SIMD3<Float>] = []
         var touchVertices: [SIMD3<Float>] = []
-        sampleVertices.reserveCapacity(maxProjectionSampleVertexCount)
         touchVertices.reserveCapacity(maxTouchSampleVertexCount)
         let totalVertexCount = triangleCount * 3
-        let sampleStep = max(1, totalVertexCount / maxProjectionSampleVertexCount)
         let touchSampleStep = max(1, totalVertexCount / maxTouchSampleVertexCount)
 
         try data.withUnsafeBytes { rawBuffer in
@@ -158,10 +153,6 @@ enum BrainSTLMeshLoader {
                     maxZ = max(maxZ, z)
 
                     let globalVertexIndex = triangleIndex * 3 + vertexIndex
-                    if globalVertexIndex % sampleStep == 0,
-                       sampleVertices.count < maxProjectionSampleVertexCount {
-                        sampleVertices.append(SIMD3<Float>(x, y, z))
-                    }
                     if globalVertexIndex % touchSampleStep == 0,
                        touchVertices.count < maxTouchSampleVertexCount {
                         touchVertices.append(SIMD3<Float>(x, y, z))
@@ -181,8 +172,7 @@ enum BrainSTLMeshLoader {
                 maxY: maxY,
                 maxZ: maxZ
             ),
-            sampleVerticesRaw: sampleVertices,
-            touchVerticesRaw: touchVertices.isEmpty ? sampleVertices : touchVertices
+            touchVerticesRaw: touchVertices
         )
     }
 
