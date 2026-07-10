@@ -35,6 +35,8 @@ struct ContentView: View {
                     DebugRow(label: "touch region", value: sessionModel.touchRegionText)
                     DebugRow(label: "touch distance", value: sessionModel.touchDistanceText)
                     DebugRow(label: "touch duration", value: sessionModel.touchDurationText)
+                    DebugRow(label: "touch model xyz", value: sessionModel.touchModelPositionText)
+                    DebugRow(label: "touch surface mix", value: sessionModel.touchSurfaceMixText)
                     DebugRow(label: "calibrated model center", value: sessionModel.brainModelCenterText)
 
                     Divider()

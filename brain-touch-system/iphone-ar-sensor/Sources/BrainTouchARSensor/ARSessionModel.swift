@@ -25,6 +25,8 @@ final class ARSessionModel: NSObject, ObservableObject {
     @Published var touchRegionText = "-"
     @Published var touchDistanceText = "-"
     @Published var touchDurationText = "-"
+    @Published var touchModelPositionText = "-"
+    @Published var touchSurfaceMixText = "-"
     @Published var calibration: BrainCalibration
     @Published var brainModel: BrainEllipsoidModel
     @Published var brainModelCenterText: String
@@ -432,6 +434,26 @@ private extension ARSessionModel {
         touchRegionText = snapshot.touch.regionLabel
             touchDistanceText = snapshot.touch.distanceCm.map { String(format: "%.1fcm", $0) } ?? "-"
             touchDurationText = String(format: "%.2fs", snapshot.touch.durationSec)
+        if let profile = snapshot.touch.contactProfile {
+            touchModelPositionText = String(
+                format: "x %.2f, y %.2f, z %.2f",
+                profile.modelPosition01.x,
+                profile.modelPosition01.y,
+                profile.modelPosition01.z
+            )
+            touchSurfaceMixText = String(
+                format: "top %.2f, side %.2f, L %.2f, R %.2f, F %.2f, B %.2f",
+                profile.topness,
+                profile.sideness,
+                profile.leftness,
+                profile.rightness,
+                profile.frontness,
+                profile.backness
+            )
+        } else {
+            touchModelPositionText = "-"
+            touchSurfaceMixText = "-"
+        }
         brainModelCenterText = Self.formatCenter(calibration.model.center)
         if let debug = snapshot.depthDebug,
            let pixel = debug.depthPixel,

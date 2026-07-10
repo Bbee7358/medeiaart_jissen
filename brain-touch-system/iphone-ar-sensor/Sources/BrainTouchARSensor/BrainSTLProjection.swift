@@ -36,6 +36,11 @@ struct SampledBrainSTLSurfaceModel: BrainSurfaceModel {
             ? simd_normalize(centerDelta)
             : SIMD3<Float>(0, 1, 0)
         let surface = surfaceClassification(normal: normalVector)
+        let contactProfile = makeContactProfile(
+            rawVertex: bestRawVertex,
+            boundingBox: metadata.boundingBox,
+            normal: normalVector
+        )
         let block = BrainRegionBlockClassifier.classify(
             rawVertex: bestRawVertex,
             boundingBox: metadata.boundingBox,
@@ -63,7 +68,8 @@ struct SampledBrainSTLSurfaceModel: BrainSurfaceModel {
             regionLabel: block.label,
             surface: surface.id,
             surfaceLabel: surface.label,
-            confidence: confidence
+            confidence: confidence,
+            contactProfile: contactProfile
         )
     }
 
@@ -81,6 +87,40 @@ struct SampledBrainSTLSurfaceModel: BrainSurfaceModel {
         }
 
         return normal.z < 0 ? ("front", "前方") : ("back", "後方")
+    }
+
+    private func makeContactProfile(
+        rawVertex: SIMD3<Float>,
+        boundingBox: STLBoundingBox,
+        normal: SIMD3<Float>
+    ) -> SurfaceContactProfile {
+        let x = normalized(rawVertex.x, min: boundingBox.minX, max: boundingBox.maxX)
+        let y = normalized(rawVertex.y, min: boundingBox.minY, max: boundingBox.maxY)
+        let z = normalized(rawVertex.z, min: boundingBox.minZ, max: boundingBox.maxZ)
+        let nx = Double(normal.x)
+        let ny = Double(normal.y)
+        let nz = Double(normal.z)
+        let horizontal = min(max(sqrt(nx * nx + nz * nz), 0), 1)
+
+        return SurfaceContactProfile(
+            modelPosition01: HandJoint3D(x: x, y: y, z: z),
+            surfaceNormal: HandJoint3D(x: nx, y: ny, z: nz),
+            topness: clamp(Double(normal.y), min: 0, max: 1),
+            sideness: horizontal,
+            leftness: clamp(-nx, min: 0, max: 1),
+            rightness: clamp(nx, min: 0, max: 1),
+            frontness: clamp(-nz, min: 0, max: 1),
+            backness: clamp(nz, min: 0, max: 1)
+        )
+    }
+
+    private func normalized(_ value: Float, min minValue: Float, max maxValue: Float) -> Double {
+        let span = max(maxValue - minValue, 0.000001)
+        return Double(Swift.max(0, Swift.min(1, (value - minValue) / span)))
+    }
+
+    private func clamp(_ value: Double, min minValue: Double, max maxValue: Double) -> Double {
+        Swift.max(minValue, Swift.min(maxValue, value))
     }
 
 }

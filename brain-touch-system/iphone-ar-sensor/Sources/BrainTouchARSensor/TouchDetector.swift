@@ -30,6 +30,7 @@ struct TouchDetectionResult: Codable, Equatable {
     let durationSec: Double
     let confidence: Double
     let speedMetersPerSec: Double?
+    let contactProfile: SurfaceContactProfile?
 }
 
 final class TouchDetector {
@@ -97,7 +98,8 @@ final class TouchDetector {
             distanceCm: absDistance * 100,
             durationSec: duration,
             confidence: confidence,
-            speedMetersPerSec: speed
+            speedMetersPerSec: speed,
+            contactProfile: surface.contactProfile
         )
     }
 
@@ -261,19 +263,22 @@ private struct SurfaceEstimate {
     let regionLabel: String
     let surface: String
     let surfaceLabel: String
+    let contactProfile: SurfaceContactProfile?
 
     init(
         distanceMeters: Double,
         region: String,
         regionLabel: String,
         surface: String,
-        surfaceLabel: String
+        surfaceLabel: String,
+        contactProfile: SurfaceContactProfile? = nil
     ) {
         self.distanceMeters = distanceMeters
         self.region = region
         self.regionLabel = regionLabel
         self.surface = surface
         self.surfaceLabel = surfaceLabel
+        self.contactProfile = contactProfile
     }
 
     init(meshHit: NearestSurfaceHit) {
@@ -283,7 +288,8 @@ private struct SurfaceEstimate {
             region: meshHit.regionId ?? fallbackRegion.id,
             regionLabel: meshHit.regionLabel ?? fallbackRegion.label,
             surface: meshHit.surface,
-            surfaceLabel: meshHit.surfaceLabel
+            surfaceLabel: meshHit.surfaceLabel,
+            contactProfile: meshHit.contactProfile
         )
     }
 
@@ -317,6 +323,7 @@ extension TouchDetectionResult {
         distanceCm: nil,
         durationSec: 0,
         confidence: 0,
-        speedMetersPerSec: nil
+        speedMetersPerSec: nil,
+        contactProfile: nil
     )
 }

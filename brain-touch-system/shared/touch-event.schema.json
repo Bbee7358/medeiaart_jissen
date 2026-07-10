@@ -195,6 +195,9 @@
           "type": ["number", "null"],
           "minimum": 0
         },
+        "surfaceContactProfile": {
+          "$ref": "#/$defs/surfaceContactProfile"
+        },
         "calibration": {
           "$ref": "#/$defs/brainCalibration"
         },
@@ -266,6 +269,58 @@
         },
         "z": {
           "type": "number"
+        }
+      }
+    },
+    "surfaceContactProfile": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": [
+        "modelPosition01",
+        "surfaceNormal",
+        "topness",
+        "sideness",
+        "leftness",
+        "rightness",
+        "frontness",
+        "backness"
+      ],
+      "properties": {
+        "modelPosition01": {
+          "$ref": "#/$defs/point3D"
+        },
+        "surfaceNormal": {
+          "$ref": "#/$defs/point3D"
+        },
+        "topness": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "sideness": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "leftness": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "rightness": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "frontness": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "backness": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
         }
       }
     },

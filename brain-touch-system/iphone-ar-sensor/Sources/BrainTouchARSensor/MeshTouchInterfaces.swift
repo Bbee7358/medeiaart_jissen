@@ -6,6 +6,17 @@ enum BrainTouchDetectionMode: String, Codable, Equatable {
     case hybrid
 }
 
+struct SurfaceContactProfile: Codable, Equatable {
+    let modelPosition01: HandJoint3D
+    let surfaceNormal: HandJoint3D
+    let topness: Double
+    let sideness: Double
+    let leftness: Double
+    let rightness: Double
+    let frontness: Double
+    let backness: Double
+}
+
 struct NearestSurfaceHit: Codable, Equatable {
     let point: HandJoint3D
     let normal: HandJoint3D
@@ -16,6 +27,7 @@ struct NearestSurfaceHit: Codable, Equatable {
     let surface: String
     let surfaceLabel: String
     let confidence: Double
+    let contactProfile: SurfaceContactProfile?
 }
 
 struct BrainRegionResolution: Codable, Equatable {
