@@ -19,7 +19,7 @@ struct DebugRow: View {
 
 struct HandSkeletonOverlay: View {
     let skeleton: HandSkeleton2D
-    private let portraitCameraImageSize = CGSize(width: 1440, height: 1920)
+    let displayTransform: CGAffineTransform
 
     var body: some View {
         GeometryReader { proxy in
@@ -46,7 +46,7 @@ struct HandSkeletonOverlay: View {
                     let center = CameraPreviewProjection.aspectFillPoint(
                         landmark,
                         in: size,
-                        imageSize: portraitCameraImageSize
+                        displayTransform: displayTransform
                     )
                     let isFingerTip = [4, 8, 12, 16, 20].contains(index)
                     let diameter = isFingerTip ? 18.0 : 12.0
@@ -81,7 +81,7 @@ struct HandSkeletonOverlay: View {
         return CameraPreviewProjection.aspectFillPoint(
             landmark,
             in: size,
-            imageSize: portraitCameraImageSize
+            displayTransform: displayTransform
         )
     }
 }
@@ -90,27 +90,74 @@ private enum CameraPreviewProjection {
     static func aspectFillPoint(
         _ normalizedPoint: HandJoint2D,
         in viewSize: CGSize,
-        imageSize: CGSize
+        displayTransform: CGAffineTransform
     ) -> CGPoint {
-        guard viewSize.width > 0,
-              viewSize.height > 0,
-              imageSize.width > 0,
-              imageSize.height > 0 else {
-            return CGPoint(
-                x: min(max(normalizedPoint.x, 0), 1) * viewSize.width,
-                y: min(max(normalizedPoint.y, 0), 1) * viewSize.height
-            )
-        }
+        guard viewSize.width > 0, viewSize.height > 0 else { return .zero }
 
-        let scale = max(viewSize.width / imageSize.width, viewSize.height / imageSize.height)
-        let scaledWidth = imageSize.width * scale
-        let scaledHeight = imageSize.height * scale
-        let offsetX = (viewSize.width - scaledWidth) / 2
-        let offsetY = (viewSize.height - scaledHeight) / 2
+        // MediaPipe receives a clockwise-rotated portrait image. Convert its
+        // top-left portrait coordinates back to ARKit's native landscape image,
+        // then let ARKit describe the exact preview crop for this device.
+        let rawImagePoint = CGPoint(
+            x: min(max(normalizedPoint.y, 0), 1),
+            y: 1.0 - min(max(normalizedPoint.x, 0), 1)
+        )
+        let viewportPoint = rawImagePoint.applying(displayTransform)
 
         return CGPoint(
-            x: offsetX + min(max(normalizedPoint.x, 0), 1) * scaledWidth,
-            y: offsetY + min(max(normalizedPoint.y, 0), 1) * scaledHeight
+            x: viewportPoint.x * viewSize.width,
+            y: viewportPoint.y * viewSize.height
+        )
+    }
+}
+
+struct HandSensorCoverageOverlay: View {
+    let skeleton: HandSkeleton2D
+    let displayTransform: CGAffineTransform
+
+    var body: some View {
+        GeometryReader { proxy in
+            if let center = handCenter(in: proxy.size), !visibleBounds(proxy.size).contains(center) {
+                let marker = clamped(center, to: visibleBounds(proxy.size))
+                ZStack {
+                    Circle()
+                        .fill(.yellow)
+                    Image(systemName: "hand.raised.fill")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(.black)
+                }
+                .frame(width: 36, height: 36)
+                .overlay(Circle().stroke(.black.opacity(0.7), lineWidth: 2))
+                .position(marker)
+                .accessibilityLabel("画面外の手を検出中")
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func handCenter(in size: CGSize) -> CGPoint? {
+        let points = skeleton.landmarks.compactMap { landmark -> CGPoint? in
+            guard let landmark else { return nil }
+            return CameraPreviewProjection.aspectFillPoint(
+                landmark,
+                in: size,
+                displayTransform: displayTransform
+            )
+        }
+        guard !points.isEmpty else { return nil }
+        return CGPoint(
+            x: points.reduce(0) { $0 + $1.x } / Double(points.count),
+            y: points.reduce(0) { $0 + $1.y } / Double(points.count)
+        )
+    }
+
+    private func visibleBounds(_ size: CGSize) -> CGRect {
+        CGRect(x: 24, y: 72, width: max(0, size.width - 48), height: max(0, size.height - 96))
+    }
+
+    private func clamped(_ point: CGPoint, to bounds: CGRect) -> CGPoint {
+        CGPoint(
+            x: min(max(point.x, bounds.minX), bounds.maxX),
+            y: min(max(point.y, bounds.minY), bounds.maxY)
         )
     }
 }
@@ -227,7 +274,7 @@ struct CalibrationStepper: View {
 
 struct FingerTipOverlay: View {
     let point: HandJoint2D?
-    private let portraitCameraImageSize = CGSize(width: 1440, height: 1920)
+    let displayTransform: CGAffineTransform
 
     var body: some View {
         GeometryReader { geometry in
@@ -235,7 +282,7 @@ struct FingerTipOverlay: View {
                 let displayPoint = CameraPreviewProjection.aspectFillPoint(
                     point,
                     in: geometry.size,
-                    imageSize: portraitCameraImageSize
+                    displayTransform: displayTransform
                 )
 
                 Circle()

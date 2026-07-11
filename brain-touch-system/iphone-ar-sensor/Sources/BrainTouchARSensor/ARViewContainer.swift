@@ -15,6 +15,8 @@ struct ARViewContainer: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: ARView, context: Context) {
+        let orientation = uiView.window?.windowScene?.interfaceOrientation ?? .portrait
+        sessionModel.updateViewport(size: uiView.bounds.size, orientation: orientation)
     }
 
     static func dismantleUIView(_ uiView: ARView, coordinator: ()) {

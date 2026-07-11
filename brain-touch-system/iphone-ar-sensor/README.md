@@ -135,7 +135,9 @@ MediaPipe Hand Landmarkerを使い、ARKitの `ARFrame.capturedImage` から手�
 
 画面上には、MediaPipeが返した21関節を点で表示し、手の骨格線も重ねて表示します。指先は黄色、その他の関節は水色、骨格線はミント色です。
 
-MediaPipeへ渡すカメラ画像は、背面カメラの `ARFrame.capturedImage` を縦向きへ回転済みの画像として渡します。そのためMediaPipeの正規化座標は、まず縦向き画像内の座標として保持します。画面表示時には、ARViewのカメラプレビューがAspect Fillで横方向にクロップされる前提で、`CameraPreviewProjection.aspectFillPoint(...)` により表示座標へ変換します。
+MediaPipeへ渡すカメラ画像は、背面カメラの `ARFrame.capturedImage` 全体を縦向きへ回転して渡します。画面に見えていないAspect Fillの外側も推論対象です。画面表示時は、固定解像度からクロップ量を推測せず、`ARFrame.displayTransform(for:viewportSize:)` を使って端末・画面サイズごとの実際のARプレビュー変換に合わせます。手の中心が表示範囲外にある場合は、黄色い手のマーカーを画面端に表示します。
+
+関節表示には、静止時の細かな揺れを抑えつつ移動時の追従性を保つ適応平滑化を適用します。これは表示と接触候補の両方に同じ座標を使うための処理で、カメラ画像の倍率やMediaPipeへの入力範囲は変更しません。LiDARとの対応を維持するため、Ultra Wideカメラへの切り替えは行いません。
 
 深度サンプリングでは、この縦向き画像座標を既存の深度サンプリング用座標へ戻して使います。実際の展示時のiPhone固定向きによって左右反転・回転の調整が必要になる可能性があります。
 
@@ -172,7 +174,7 @@ MediaPipeへ渡すカメラ画像は、背面カメラの `ARFrame.capturedImage
 
 注意:
 
-現在は縦向き・背面カメラ固定で検証する前提です。iPhone画面で、黄色い点がMediaPipeの指先、骨格線がMediaPipeの手認識、深度サンプル表示が実際にdepthを読む点です。指を画面の左上、右上、左下、右下に動かし、関節点と深度サンプルが同じ方向へ動くか確認してください。全体的に横へズレる場合は `CameraPreviewProjection.aspectFillPoint(...)`、逆方向に動く場合は `MediaPipeHandLandmarker.normalizedLandmarkToDisplayPoint(_:)` または `DepthSampler.visionPointToRawImageNormalizedPortraitBack(_:)` の変換候補を調整します。
+現在は縦向き・背面カメラ固定で検証する前提です。iPhone画面で、黄色い点がMediaPipeの指先、骨格線がMediaPipeの手認識、深度サンプル表示が実際にdepthを読む点です。指を画面の中央、左端、右端、上下端へ動かし、外周でも関節が指に重なることを確認してください。さらに手を表示範囲の外へ少し動かし、検出が継続している間は黄色い手マーカーが該当する画面端へ出ることを確認します。
 
 ## PC側との接続手順
 

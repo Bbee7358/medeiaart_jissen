@@ -304,7 +304,16 @@ struct ContentView: View {
                     .ignoresSafeArea()
             }
 
-            HandSkeletonOverlay(skeleton: sessionModel.handPose.skeleton)
+            HandSkeletonOverlay(
+                skeleton: sessionModel.handPose.skeleton,
+                displayTransform: sessionModel.cameraDisplayTransform
+            )
+                .ignoresSafeArea()
+
+            HandSensorCoverageOverlay(
+                skeleton: sessionModel.handPose.skeleton,
+                displayTransform: sessionModel.cameraDisplayTransform
+            )
                 .ignoresSafeArea()
 
         }

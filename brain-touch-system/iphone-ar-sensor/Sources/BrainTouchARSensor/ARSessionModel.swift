@@ -1,5 +1,6 @@
 import ARKit
 import Foundation
+import UIKit
 
 private struct HandDetectionFrameContext: @unchecked Sendable {
     let pixelBuffer: CVPixelBuffer
@@ -53,6 +54,7 @@ final class ARSessionModel: NSObject, ObservableObject {
     @Published var stlProjectionText = "-"
     @Published var stlNearestDistanceText = "-"
     @Published var stlNearestSurfaceText = "-"
+    @Published var cameraDisplayTransform = CGAffineTransform.identity
 
     private var lastFrameTimestamp: TimeInterval?
     private var lastHandPoseTimestamp: TimeInterval = 0
@@ -69,6 +71,12 @@ final class ARSessionModel: NSObject, ObservableObject {
     private var isHandDetectionInFlight = false
     private var isTrackingNormal = false
     private var hasConfirmedBrainCalibration = false
+    private var viewportSize = CGSize.zero
+    private var interfaceOrientation: UIInterfaceOrientation = .portrait
+    private var smoothedHandLandmarks = Array<HandJoint2D?>(
+        repeating: nil,
+        count: MediaPipeHandLandmark.count
+    )
 
     var currentFPS: Double { smoothedFrameRate }
 
@@ -168,6 +176,14 @@ final class ARSessionModel: NSObject, ObservableObject {
 
         session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
     }
+
+    func updateViewport(size: CGSize, orientation: UIInterfaceOrientation) {
+        guard size.width > 0, size.height > 0 else { return }
+        viewportSize = size
+        if orientation != .unknown {
+            interfaceOrientation = orientation
+        }
+    }
 }
 
 extension ARSessionModel: ARSessionDelegate {
@@ -181,6 +197,12 @@ extension ARSessionModel: ARSessionDelegate {
 
         Task { @MainActor in
             self.isTrackingNormal = Self.isNormalTracking(camera.trackingState)
+            if self.viewportSize.width > 0, self.viewportSize.height > 0 {
+                self.cameraDisplayTransform = frame.displayTransform(
+                    for: self.interfaceOrientation,
+                    viewportSize: self.viewportSize
+                )
+            }
             self.updateFrameMetrics(timestamp: timestamp, hasDepth: hasDepth)
             self.processDepthCalibrationIfNeeded(depthData: depthData, camera: camera)
             self.detectHandPoseIfNeeded(
@@ -404,6 +426,7 @@ private extension ARSessionModel {
         timestamp: TimeInterval
     ) {
         guard detection.handDetected else {
+            smoothedHandLandmarks = Array(repeating: nil, count: MediaPipeHandLandmark.count)
             contactPoint3DSmoother.reset()
             _ = touchDetector.update(indexTip3D: nil, hasDepth: false, timestamp: timestamp)
             updateSTLNearestDebug(indexTip3D: nil)
@@ -411,14 +434,48 @@ private extension ARSessionModel {
             return
         }
 
+        let stabilizedDetection = stabilized(detection)
         updateHandPose(makeHandPoseSnapshot(
-            from: detection,
+            from: stabilizedDetection,
             depthData: depthData,
             depthSource: depthSource,
             capturedImage: pixelBuffer,
             camera: camera,
             timestamp: timestamp
         ))
+    }
+
+    func stabilized(_ detection: MediaPipeHandDetection) -> MediaPipeHandDetection {
+        guard detection.landmarks.count == MediaPipeHandLandmark.count else { return detection }
+
+        let filtered = detection.landmarks.enumerated().map { index, point -> HandJoint2D? in
+            guard let point else {
+                smoothedHandLandmarks[index] = nil
+                return nil
+            }
+            guard let previous = smoothedHandLandmarks[index] else {
+                smoothedHandLandmarks[index] = point
+                return point
+            }
+
+            let movement = hypot(point.x - previous.x, point.y - previous.y)
+            // Small movements are mostly landmark jitter; large movements stay responsive.
+            let alpha = min(0.88, max(0.38, 0.38 + movement * 5.0))
+            let next = HandJoint2D(
+                x: previous.x + (point.x - previous.x) * alpha,
+                y: previous.y + (point.y - previous.y) * alpha
+            )
+            smoothedHandLandmarks[index] = next
+            return next
+        }
+
+        return MediaPipeHandDetection(
+            handDetected: detection.handDetected,
+            landmarks: filtered,
+            confidence: detection.confidence,
+            inferenceMs: detection.inferenceMs,
+            status: detection.status
+        )
     }
 
     func updateHandPose(_ snapshot: HandPoseSnapshot) {
