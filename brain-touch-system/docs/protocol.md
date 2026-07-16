@@ -23,6 +23,7 @@ PC側は受信したJSONを表示・ログ保存・演出接続に使います�
 - `settings_applied`: iPhoneが設定を保存・適用した通知
 - `ping`: 接続確認
 - `pong`: `ping` への応答
+- `brain_touch_state`: PCから演出WebSocket `8788` へ送る接触状態
 
 後方互換のため、PCサーバーは `type` なしの従来タッチイベントJSONも受け取れます。
 
@@ -214,3 +215,7 @@ TODO:
 - 常時送信か状態変化送信かを決める
 - WebSocket再接続仕様を決める
 - `settings_update` のACK仕様を決める
+
+## MediaArtG1演出状態
+
+PCサーバーは演出用WebSocket `8788` で、12領域をMediaArtG1の `visual`、`auditory`、`gustatory`、`hippocampus`、`amygdala`へ変換します。同じ接触を10Hzで受信しても、`start`は一度だけで、以降は`update`、接触解除時は`end`になります。これにより既存エフェクトを繰り返し作り直さず、低遅延で接触時間に追従できます。

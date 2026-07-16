@@ -5,6 +5,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Ajv2020Import, { type ErrorObject } from "ajv/dist/2020.js";
 import { WebSocketServer, WebSocket } from "ws";
+import {
+  PerformanceTouchStateMachine,
+  resolvePerformanceEffect
+} from "./performance-events.js";
 
 const PORT = 8787;
 const PERFORMANCE_PORT = 8788;
@@ -68,6 +72,7 @@ const server = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE_BYT
 const performanceServer = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE_BYTES });
 const clients = new Map<WebSocket, ClientState>();
 const performanceClients = new Map<WebSocket, { alive: boolean }>();
+const performanceTouchState = new PerformanceTouchStateMachine();
 
 let stats: DailyStats = {
   date: formatLocalDate(new Date()),
@@ -76,7 +81,7 @@ let stats: DailyStats = {
 };
 let latestSettings: SettingsUpdatePayload | null = null;
 let performanceOutputSettings: PerformanceOutputSettings = {
-  enabled: false,
+  enabled: true,
   confirmedOnly: true,
   confidenceThreshold: 0.75
 };
@@ -285,12 +290,22 @@ function validatePerformanceSettings(payload: unknown): PerformanceOutputSetting
 
 function maybeBroadcastPerformanceEvent(event: TouchEventMessage) {
   if (!performanceOutputSettings.enabled) return;
+
+  for (const stateMessage of performanceTouchState.update(
+    event,
+    performanceOutputSettings.confidenceThreshold
+  )) {
+    for (const socket of performanceClients.keys()) sendJson(socket, stateMessage);
+  }
+
   if (
     performanceOutputSettings.confirmedOnly &&
     (!event.isTouching || event.confidence < performanceOutputSettings.confidenceThreshold)
   ) return;
   const message = {
     type: "brain_touch",
+    effectKey: resolvePerformanceEffect(event.region),
+    isTouching: event.isTouching,
     region: event.region,
     regionLabel: event.regionLabel,
     surface: event.surface,
@@ -382,6 +397,13 @@ function handleMessage(socket: WebSocket, raw: Buffer, remote: string) {
       if (!settings) {
         warn(`[ws] invalid performance settings from ${remote}`);
         return;
+      }
+      if (performanceOutputSettings.enabled && !settings.enabled) {
+        for (const stateMessage of performanceTouchState.reset()) {
+          for (const performanceSocket of performanceClients.keys()) {
+            sendJson(performanceSocket, stateMessage);
+          }
+        }
       }
       performanceOutputSettings = settings;
       broadcastDiagnostics();

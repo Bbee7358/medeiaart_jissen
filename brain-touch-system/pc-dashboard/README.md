@@ -110,6 +110,7 @@ WebSocketサーバーは最新の設定を保持し、後から接続したiPhon
 - 形式: JSON
 - 接続先例: `ws://127.0.0.1:8788`
 - 同一ネットワーク上の別アプリから接続する場合: `ws://<PCのIPアドレス>:8788`
+- 初期状態: 演出出力ON
 
 ダッシュボードの `Performance Output` パネルで以下を切り替えます。
 
@@ -130,6 +131,43 @@ WebSocketサーバーは最新の設定を保持し、後から接続したiPhon
   "durationSec": 0.72,
   "timestamp": 1720000000000
 }
+```
+
+MediaArtG1向けには、連続する10Hzイベントを接触状態へまとめたメッセージも送ります。`start`で既存エフェクトを開始し、同じ領域の`update`では再初期化せず、`end`で終了します。
+
+```json
+{
+  "type": "brain_touch_state",
+  "phase": "start",
+  "effectKey": "visual",
+  "region": "top_back_left",
+  "regionLabel": "上段・後左",
+  "confidence": 0.91,
+  "durationSec": 0.52,
+  "timestamp": 1720000000000
+}
+```
+
+12領域から5種類への初期対応は次の通りです。これは展示上の対応であり、医学的な同一性を示すものではありません。
+
+| 物理領域 | MediaArtG1 effect |
+| --- | --- |
+| `top_back_*`, `side_lower_back_*` | `visual` |
+| `side_lower_middle_*` | `auditory` |
+| `side_lower_front_*` | `gustatory` |
+| `top_middle_*` | `hippocampus` |
+| `top_front_*` | `amygdala` |
+
+iPhoneなしで5種類を順番に確認できます。
+
+```bash
+npm run mock:performance
+```
+
+1種類だけ長めに確認する場合:
+
+```bash
+npm run mock:performance -- visual 10000
 ```
 
 TouchDesigner、p5.js、Processing、Unity、LED制御プログラムなどは、`8788` のWebSocketへクライアント接続してこのJSONを受け取ります。受信専用クライアントで問題ありません。疎通確認用に `{"type":"ping"}` を送ると `pong` が返ります。

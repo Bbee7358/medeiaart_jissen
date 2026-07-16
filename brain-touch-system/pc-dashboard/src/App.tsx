@@ -4,7 +4,7 @@ import type { DailyStats, DashboardStatus, PerformanceOutputSettings, PixelPoint
 const WS_URL = "ws://127.0.0.1:8787";
 const MAX_LOGS = 10;
 const THRESHOLDS_STORAGE_KEY = "brain-touch-dashboard.thresholds.v1";
-const PERFORMANCE_OUTPUT_STORAGE_KEY = "brain-touch-dashboard.performance-output.v1";
+const PERFORMANCE_OUTPUT_STORAGE_KEY = "brain-touch-dashboard.performance-output.v2";
 
 type ThresholdSettings = {
   touchThresholdCm: number;
@@ -23,7 +23,7 @@ const DEFAULT_THRESHOLDS: ThresholdSettings = {
 };
 
 const DEFAULT_PERFORMANCE_OUTPUT: PerformanceOutputSettings = {
-  enabled: false,
+  enabled: true,
   confirmedOnly: true,
   confidenceThreshold: 0.75
 };
