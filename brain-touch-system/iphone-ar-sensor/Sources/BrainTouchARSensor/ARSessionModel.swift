@@ -63,6 +63,7 @@ final class ARSessionModel: NSObject, ObservableObject {
     private let touchDetector: TouchDetector
     private var depthCalibrationBaseline: DepthCalibrationBaseline?
     private var pendingBaselineFrames: [DepthCalibrationBaseline] = []
+    private var pendingBrainEstimates: [DepthBrainCalibrationEstimate] = []
     private var pendingDepthCalibrationAction: DepthCalibrationAction?
     private var brainSTLMetadata: BrainSTLMetadata?
     private let handDetectionWorker = MediaPipeHandDetectionWorker()
@@ -103,6 +104,7 @@ final class ARSessionModel: NSObject, ObservableObject {
     func resetCalibration() {
         hasConfirmedBrainCalibration = false
         depthCalibrationBaseline = nil
+        pendingBrainEstimates.removeAll(keepingCapacity: true)
         brainDetectionOverlay = .empty
         stlProjectionText = "-"
         autoCalibrationText = "waiting for stable empty view"
@@ -111,6 +113,7 @@ final class ARSessionModel: NSObject, ObservableObject {
 
     func captureEmptyDepthBaseline() {
         pendingBaselineFrames.removeAll(keepingCapacity: true)
+        pendingBrainEstimates.removeAll(keepingCapacity: true)
         pendingDepthCalibrationAction = .captureEmptyBaseline
         depthCalibrationStatusText = "capturing empty baseline 0/15..."
     }
@@ -121,8 +124,9 @@ final class ARSessionModel: NSObject, ObservableObject {
             return
         }
 
+        pendingBrainEstimates.removeAll(keepingCapacity: true)
         pendingDepthCalibrationAction = .estimateBrainFromBaseline
-        depthCalibrationStatusText = "estimating brain from depth..."
+        depthCalibrationStatusText = "estimating brain from depth 0/5..."
     }
 
     func applyRemoteSettings(_ settings: RemoteSettingsUpdatePayload) {
@@ -279,8 +283,8 @@ private extension ARSessionModel {
                 hasConfirmedBrainCalibration = false
 
             case .estimateBrainFromBaseline:
-                pendingDepthCalibrationAction = nil
                 guard let baseline = depthCalibrationBaseline else {
+                    pendingDepthCalibrationAction = nil
                     depthCalibrationStatusText = "capture empty baseline first"
                     return
                 }
@@ -290,8 +294,15 @@ private extension ARSessionModel {
                     camera: camera,
                     baseline: baseline
                 )
+                pendingBrainEstimates.append(estimate)
+                depthCalibrationStatusText = "estimating brain from depth \(pendingBrainEstimates.count)/5..."
+                guard pendingBrainEstimates.count >= 5 else { return }
+
+                let mergedEstimate = try DepthBrainCalibrator.mergeEstimates(pendingBrainEstimates)
+                pendingDepthCalibrationAction = nil
+                pendingBrainEstimates.removeAll(keepingCapacity: true)
                 applyDepthCalibrationEstimate(
-                    estimate,
+                    mergedEstimate,
                     status: "brain calibrated from depth",
                     blendWithCurrent: false,
                     save: true
@@ -300,12 +311,14 @@ private extension ARSessionModel {
         } catch let error as DepthBrainCalibrationError {
             pendingDepthCalibrationAction = nil
             pendingBaselineFrames.removeAll(keepingCapacity: true)
+            pendingBrainEstimates.removeAll(keepingCapacity: true)
             depthCalibrationStatusText = "calibration error: \(error.description)"
             brainDetectionOverlay = .empty
             hasConfirmedBrainCalibration = false
         } catch {
             pendingDepthCalibrationAction = nil
             pendingBaselineFrames.removeAll(keepingCapacity: true)
+            pendingBrainEstimates.removeAll(keepingCapacity: true)
             depthCalibrationStatusText = "calibration error: \(error.localizedDescription)"
             brainDetectionOverlay = .empty
             hasConfirmedBrainCalibration = false

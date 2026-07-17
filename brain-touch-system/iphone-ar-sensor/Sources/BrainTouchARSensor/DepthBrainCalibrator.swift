@@ -106,7 +106,7 @@ enum DepthBrainCalibrationError: Error, CustomStringConvertible {
         case .invalidCameraIntrinsics:
             return "Camera intrinsics are invalid"
         case .cameraMovedDuringCapture:
-            return "iPhone moved during baseline capture"
+            return "iPhone moved during or after baseline; capture baseline again"
         case .implausibleBrainSize(let width, let depth, let height):
             return String(format: "Detected object size is not brain-like: %.2f x %.2f x %.2f m", width, depth, height)
         }
@@ -327,6 +327,9 @@ enum DepthBrainCalibrator {
                 actual: actualSize
             )
         }
+        guard cameraPoseMatchesBaseline(camera.transform, baseline.cameraTransform) else {
+            throw DepthBrainCalibrationError.cameraMovedDuringCapture
+        }
 
         let scaledIntrinsics = PointUnprojector.scaledIntrinsicsForDepth(
             camera: camera,
@@ -403,7 +406,9 @@ enum DepthBrainCalibrator {
 
                 let delta = baselineDepth - currentDepth
                 let medianDelta = Float(baseline.medianDepthMeters) - currentDepth
-                let selectedDelta = max(delta, medianDelta)
+                // Static foreground objects can be closer than the scene median
+                // without moving. Only the same-pixel delta marks a new object.
+                let selectedDelta = delta
                 if selectedDelta > 0.001,
                    selectedDelta <= maxReasonableHeight {
                     lowRaisedCount += 1
@@ -444,6 +449,9 @@ enum DepthBrainCalibrator {
             depthMapSize: actualSize,
             centerPixel: centerPixel
         )
+        guard centeredStrongPixels.count >= minCandidateSamples else {
+            throw DepthBrainCalibrationError.noBrainCandidate(sampleCount: centeredStrongPixels.count)
+        }
         let strongBounds = robustBounds(
             xSamples: centeredStrongPixels.map(\.x),
             ySamples: centeredStrongPixels.map(\.y)
@@ -544,8 +552,10 @@ enum DepthBrainCalibrator {
         )
 
         let topDepth = Double(topMedianDepth)
-        let widthMeters = Double(Float(bounds.widthPixels) * Float(topDepth) / fx)
-        let depthMeters = Double(Float(bounds.heightPixels) * Float(topDepth) / fy)
+        // Raw portrait/back-camera depth Y maps to display X, so the physical
+        // model width comes from the raw Y span and depth from the raw X span.
+        let widthMeters = Double(Float(bounds.heightPixels) * Float(topDepth) / fy)
+        let depthMeters = Double(Float(bounds.widthPixels) * Float(topDepth) / fx)
         guard (0.08...0.35).contains(widthMeters),
               (0.08...0.40).contains(depthMeters),
               (0.025...0.25).contains(heightAboveBaseline) else {
@@ -577,6 +587,42 @@ enum DepthBrainCalibrator {
             centroidPixel: PixelPoint(x: Int(round(centroidX)), y: Int(round(centroidY))),
             bounds: bounds,
             overlay: overlay
+        )
+    }
+
+    static func mergeEstimates(_ estimates: [DepthBrainCalibrationEstimate]) throws -> DepthBrainCalibrationEstimate {
+        guard let first = estimates.first else {
+            throw DepthBrainCalibrationError.noBrainCandidate(sampleCount: 0)
+        }
+
+        let centerX = median(estimates.map { Float($0.centerWorld.x) }).map(Double.init) ?? first.centerWorld.x
+        let centerY = median(estimates.map { Float($0.centerWorld.y) }).map(Double.init) ?? first.centerWorld.y
+        let centerZ = median(estimates.map { Float($0.centerWorld.z) }).map(Double.init) ?? first.centerWorld.z
+        let width = median(estimates.map { Float($0.widthMeters) }).map(Double.init) ?? first.widthMeters
+        let depth = median(estimates.map { Float($0.depthMeters) }).map(Double.init) ?? first.depthMeters
+        let height = median(estimates.map { Float($0.heightMeters) }).map(Double.init) ?? first.heightMeters
+        let representative = estimates.min { lhs, rhs in
+            estimateDistance(lhs, width: width, depth: depth, height: height) <
+                estimateDistance(rhs, width: width, depth: depth, height: height)
+        } ?? first
+
+        return DepthBrainCalibrationEstimate(
+            centerWorld: HandJoint3D(x: centerX, y: centerY, z: centerZ),
+            widthMeters: width,
+            depthMeters: depth,
+            heightMeters: height,
+            topSurfaceDepthMeters: representative.topSurfaceDepthMeters,
+            centerDepthMeters: representative.centerDepthMeters,
+            baselineDepthMeters: representative.baselineDepthMeters,
+            heightAboveBaselineMeters: height,
+            sampleCount: representative.sampleCount,
+            weakCandidateCount: representative.weakCandidateCount,
+            medianCandidateCount: representative.medianCandidateCount,
+            leftCandidateCount: representative.leftCandidateCount,
+            rightCandidateCount: representative.rightCandidateCount,
+            centroidPixel: representative.centroidPixel,
+            bounds: representative.bounds,
+            overlay: representative.overlay
         )
     }
 
@@ -664,8 +710,8 @@ enum DepthBrainCalibrator {
         from bounds: DepthCalibrationBounds,
         depthMapSize: PixelSize
     ) -> DepthCalibrationBounds {
-        let xMargin = max(12, Int(round(Double(bounds.widthPixels) * 0.85)))
-        let yMargin = max(12, Int(round(Double(bounds.heightPixels) * 0.85)))
+        let xMargin = max(8, Int(round(Double(bounds.widthPixels) * 0.45)))
+        let yMargin = max(8, Int(round(Double(bounds.heightPixels) * 0.45)))
         return DepthCalibrationBounds(
             minX: max(0, bounds.minX - xMargin),
             minY: max(0, bounds.minY - yMargin),
@@ -726,7 +772,41 @@ enum DepthBrainCalibrator {
             }
         }
 
-        return bestComponent.isEmpty ? seeds : bestComponent
+        return bestComponent
+    }
+
+    private static func cameraPoseMatchesBaseline(
+        _ current: simd_float4x4,
+        _ baseline: simd_float4x4
+    ) -> Bool {
+        let currentPosition = SIMD3<Float>(current.columns.3.x, current.columns.3.y, current.columns.3.z)
+        let baselinePosition = SIMD3<Float>(baseline.columns.3.x, baseline.columns.3.y, baseline.columns.3.z)
+        guard simd_distance(currentPosition, baselinePosition) <= 0.025 else {
+            return false
+        }
+
+        let currentForward = simd_normalize(-SIMD3<Float>(
+            current.columns.2.x,
+            current.columns.2.y,
+            current.columns.2.z
+        ))
+        let baselineForward = simd_normalize(-SIMD3<Float>(
+            baseline.columns.2.x,
+            baseline.columns.2.y,
+            baseline.columns.2.z
+        ))
+        return simd_dot(currentForward, baselineForward) >= 0.9994
+    }
+
+    private static func estimateDistance(
+        _ estimate: DepthBrainCalibrationEstimate,
+        width: Double,
+        depth: Double,
+        height: Double
+    ) -> Double {
+        abs(estimate.widthMeters - width) +
+            abs(estimate.depthMeters - depth) +
+            abs(estimate.heightMeters - height)
     }
 
     private static func connectedObjectPixels(
