@@ -65,6 +65,8 @@ final class ARSessionModel: NSObject, ObservableObject {
     private var pendingBaselineFrames: [DepthCalibrationBaseline] = []
     private var pendingBrainEstimates: [DepthBrainCalibrationEstimate] = []
     private var pendingDepthCalibrationAction: DepthCalibrationAction?
+    private var depthCalibrationAttemptCount = 0
+    private let maxDepthCalibrationAttempts = 60
     private var brainSTLMetadata: BrainSTLMetadata?
     private let handDetectionWorker = MediaPipeHandDetectionWorker()
     private var isHandDetectionInFlight = false
@@ -114,6 +116,7 @@ final class ARSessionModel: NSObject, ObservableObject {
     func captureEmptyDepthBaseline() {
         pendingBaselineFrames.removeAll(keepingCapacity: true)
         pendingBrainEstimates.removeAll(keepingCapacity: true)
+        depthCalibrationAttemptCount = 0
         pendingDepthCalibrationAction = .captureEmptyBaseline
         depthCalibrationStatusText = "capturing empty baseline 0/15..."
     }
@@ -125,8 +128,9 @@ final class ARSessionModel: NSObject, ObservableObject {
         }
 
         pendingBrainEstimates.removeAll(keepingCapacity: true)
+        depthCalibrationAttemptCount = 0
         pendingDepthCalibrationAction = .estimateBrainFromBaseline
-        depthCalibrationStatusText = "estimating brain from depth 0/5..."
+        depthCalibrationStatusText = "searching for brain 0/5..."
     }
 
     func applyRemoteSettings(_ settings: RemoteSettingsUpdatePayload) {
@@ -289,18 +293,20 @@ private extension ARSessionModel {
                     return
                 }
 
+                depthCalibrationAttemptCount += 1
                 let estimate = try DepthBrainCalibrator.estimateBrain(
                     depthData: depthData,
                     camera: camera,
                     baseline: baseline
                 )
                 pendingBrainEstimates.append(estimate)
-                depthCalibrationStatusText = "estimating brain from depth \(pendingBrainEstimates.count)/5..."
+                depthCalibrationStatusText = "brain found \(pendingBrainEstimates.count)/5..."
                 guard pendingBrainEstimates.count >= 5 else { return }
 
                 let mergedEstimate = try DepthBrainCalibrator.mergeEstimates(pendingBrainEstimates)
                 pendingDepthCalibrationAction = nil
                 pendingBrainEstimates.removeAll(keepingCapacity: true)
+                depthCalibrationAttemptCount = 0
                 applyDepthCalibrationEstimate(
                     mergedEstimate,
                     status: "brain calibrated from depth",
@@ -309,9 +315,17 @@ private extension ARSessionModel {
                 )
             }
         } catch let error as DepthBrainCalibrationError {
+            if case .estimateBrainFromBaseline = action,
+               shouldRetryDepthCalibration(error),
+               depthCalibrationAttemptCount < maxDepthCalibrationAttempts {
+                depthCalibrationStatusText = "searching brain \(pendingBrainEstimates.count)/5, frame \(depthCalibrationAttemptCount)/\(maxDepthCalibrationAttempts)"
+                return
+            }
+
             pendingDepthCalibrationAction = nil
             pendingBaselineFrames.removeAll(keepingCapacity: true)
             pendingBrainEstimates.removeAll(keepingCapacity: true)
+            depthCalibrationAttemptCount = 0
             depthCalibrationStatusText = "calibration error: \(error.description)"
             brainDetectionOverlay = .empty
             hasConfirmedBrainCalibration = false
@@ -319,9 +333,19 @@ private extension ARSessionModel {
             pendingDepthCalibrationAction = nil
             pendingBaselineFrames.removeAll(keepingCapacity: true)
             pendingBrainEstimates.removeAll(keepingCapacity: true)
+            depthCalibrationAttemptCount = 0
             depthCalibrationStatusText = "calibration error: \(error.localizedDescription)"
             brainDetectionOverlay = .empty
             hasConfirmedBrainCalibration = false
+        }
+    }
+
+    func shouldRetryDepthCalibration(_ error: DepthBrainCalibrationError) -> Bool {
+        switch error {
+        case .noBrainCandidate(_), .implausibleBrainSize(_, _, _):
+            return true
+        default:
+            return false
         }
     }
 

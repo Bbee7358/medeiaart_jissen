@@ -444,7 +444,7 @@ enum DepthBrainCalibrator {
             x: Int(round(Double(width - 1) / 2)),
             y: Int(round(Double(height - 1) / 2))
         )
-        let centeredStrongPixels = connectedSeedPixelsClosestToCenter(
+        let centeredStrongPixels = connectedSeedPixelsBestMatchingBrain(
             seeds: strongPixels,
             depthMapSize: actualSize,
             centerPixel: centerPixel
@@ -720,7 +720,7 @@ enum DepthBrainCalibrator {
         )
     }
 
-    private static func connectedSeedPixelsClosestToCenter(
+    private static func connectedSeedPixelsBestMatchingBrain(
         seeds: [PixelPoint],
         depthMapSize: PixelSize,
         centerPixel: PixelPoint
@@ -736,8 +736,8 @@ enum DepthBrainCalibrator {
 
         var visited = Array(repeating: false, count: width * height)
         var bestComponent: [PixelPoint] = []
-        var bestDistance = Double.greatestFiniteMagnitude
-        var bestCount = 0
+        var bestScore = Double.greatestFiniteMagnitude
+        let distanceScale = Double(max(1, min(width, height)))
 
         for seed in seeds {
             let seedIndex = seed.y * width + seed.x
@@ -758,16 +758,37 @@ enum DepthBrainCalibrator {
             }
 
             let centroid = centroid(of: component)
-            let distance = squaredDistance(
+            let centerDistance = sqrt(squaredDistance(
                 x0: centroid.x,
                 y0: centroid.y,
                 x1: Double(centerPixel.x),
                 y1: Double(centerPixel.y)
+            )) / distanceScale
+            let bounds = robustBounds(
+                xSamples: component.map(\.x),
+                ySamples: component.map(\.y)
             )
-            if distance < bestDistance ||
-                (distance == bestDistance && component.count > bestCount) {
-                bestDistance = distance
-                bestCount = component.count
+            let shortSpan = max(1, min(bounds.widthPixels, bounds.heightPixels))
+            let longSpan = max(bounds.widthPixels, bounds.heightPixels)
+            let aspectRatio = Double(longSpan) / Double(shortSpan)
+
+            // Shelf edges and camera-motion bands are typically long, thin
+            // components. A physical brain can be off-center, but its depth
+            // silhouette should remain compact in the raw depth image.
+            guard aspectRatio <= 3.25,
+                  shortSpan >= 5 else {
+                continue
+            }
+
+            let boundsArea = max(1, bounds.widthPixels * bounds.heightPixels)
+            let fillRatio = Double(component.count) / Double(boundsArea)
+            let aspectPenalty = abs(log(aspectRatio)) * 0.42
+            let sparsePenalty = max(0, 0.18 - fillRatio) * 1.8
+            let sizeReward = min(0.35, log1p(Double(component.count)) * 0.045)
+            let score = centerDistance + aspectPenalty + sparsePenalty - sizeReward
+
+            if score < bestScore {
+                bestScore = score
                 bestComponent = component
             }
         }
