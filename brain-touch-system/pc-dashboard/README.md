@@ -178,6 +178,23 @@ WebSocketサーバーだけ起動します。
 npm run start
 ```
 
+### macOSで常時起動する
+
+展示用Macでは次を一度実行すると、ログイン時に8787/8788番サーバーが起動し、終了した場合も自動的に再起動します。
+
+```sh
+npm run service:install
+```
+
+状態確認:
+
+```sh
+launchctl print "gui/$UID/com.mediaart.brain-touch-server"
+curl http://127.0.0.1:8787/health
+```
+
+常駐用ファイルは `~/Library/Application Support/BrainTouchServer/`、受信イベントと標準出力・エラーは `~/Library/Logs/BrainTouch/` に保存されます。元のプロジェクトが「書類」フォルダにあっても、常駐プロセスはそこを直接読まないためmacOSのプライバシー制限の影響を受けません。
+
 ビルド済みWeb UIを配信する本番サーバーはまだ未実装です。展示用には、後続フェーズで静的配信またはPCアプリ化を検討します。
 
 ## iPhoneから接続するURL

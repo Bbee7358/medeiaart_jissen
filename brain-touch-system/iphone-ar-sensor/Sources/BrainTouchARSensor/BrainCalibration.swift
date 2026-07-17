@@ -165,8 +165,8 @@ enum BrainCalibrationStore {
             heightMeters: clamp(calibration.heightMeters, min: 0.05, max: 1.00),
             meshRealWidthMeters: clamp(calibration.meshRealWidthMeters, min: 0.03, max: 1.00),
             meshYawDegrees: clamp(calibration.meshYawDegrees, min: -180.0, max: 180.0),
-            touchThresholdCm: clamp(calibration.touchThresholdCm, min: 0.5, max: 20.0),
-            strongTouchThresholdCm: clamp(calibration.strongTouchThresholdCm, min: 0.5, max: 20.0),
+            touchThresholdCm: clamp(calibration.touchThresholdCm, min: 0.5, max: 8.0),
+            strongTouchThresholdCm: clamp(calibration.strongTouchThresholdCm, min: 0.5, max: 8.0),
             dwellTimeSeconds: clamp(calibration.dwellTimeSeconds, min: 0.0, max: 3.0),
             confidenceThreshold: clamp(calibration.confidenceThreshold, min: 0.0, max: 1.0),
             smoothingFrames: Int(clamp(Double(calibration.smoothingFrames), min: 1, max: 30))

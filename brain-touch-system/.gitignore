@@ -4,5 +4,6 @@ iphone-ar-sensor/BrainTouchARSensor.xcodeproj/xcuserdata/
 *.xcuserstate
 pc-dashboard/node_modules/
 pc-dashboard/dist/
+pc-dashboard/dist-server/
 pc-dashboard/*.tsbuildinfo
 pc-dashboard/node_modules/.tmp/

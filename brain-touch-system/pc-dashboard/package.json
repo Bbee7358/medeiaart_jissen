@@ -6,10 +6,12 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5173",
     "server": "tsx server/index.ts",
+    "server:build": "esbuild server/index.ts --bundle --platform=node --format=esm --target=node22 --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" --outfile=dist-server/server.mjs",
     "mock": "tsx scripts/mock-sender.ts",
     "net": "tsx scripts/network-diagnostics.ts",
     "http-test": "tsx scripts/simple-http-test.ts",
     "http-test:8001": "HTTP_TEST_PORT=8001 tsx scripts/simple-http-test.ts",
+    "service:install": "zsh scripts/install-macos-service.sh",
     "test": "tsx --test tests/**/*.test.ts",
     "build": "tsc -b && vite build",
     "start": "tsx server/index.ts"

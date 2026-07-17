@@ -15,8 +15,12 @@ const DIAGNOSTICS_INTERVAL_MS = 1_000;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dashboardRoot = path.resolve(__dirname, "..");
 const projectRoot = path.resolve(dashboardRoot, "..");
-const logsDir = path.join(dashboardRoot, "logs");
-const schemaPath = path.join(projectRoot, "shared/touch-event.schema.json");
+const logsDir = process.env.BRAIN_TOUCH_LOGS_DIR
+  ? path.resolve(process.env.BRAIN_TOUCH_LOGS_DIR)
+  : path.join(dashboardRoot, "logs");
+const schemaPath = process.env.BRAIN_TOUCH_SCHEMA_PATH
+  ? path.resolve(process.env.BRAIN_TOUCH_SCHEMA_PATH)
+  : path.join(projectRoot, "shared/touch-event.schema.json");
 
 type ClientRole = "unknown" | "iphone_sensor" | "dashboard";
 type ClientState = {
@@ -75,7 +79,13 @@ let stats: DailyStats = {
   receivedCount: 0,
   confirmedTouchCount: 0
 };
-let latestSettings: SettingsUpdatePayload | null = null;
+let latestSettings: SettingsUpdatePayload = {
+  touchThresholdCm: 5,
+  strongTouchThresholdCm: 3,
+  dwellTimeSec: 0.5,
+  confidenceThreshold: 0.55,
+  smoothingFrames: 5
+};
 let performanceOutputSettings: PerformanceOutputSettings = {
   enabled: false,
   confirmedOnly: true,
@@ -278,7 +288,7 @@ function validateSettingsPayload(payload: unknown): SettingsUpdatePayload | null
   };
   if (Object.values(settings).some((value) => !Number.isFinite(value))) return null;
   if (
-    settings.touchThresholdCm < 0.5 || settings.touchThresholdCm > 20 ||
+    settings.touchThresholdCm < 0.5 || settings.touchThresholdCm > 8 ||
     settings.strongTouchThresholdCm < 0.5 ||
     settings.strongTouchThresholdCm > settings.touchThresholdCm ||
     settings.dwellTimeSec < 0 || settings.dwellTimeSec > 3 ||
@@ -328,7 +338,7 @@ function registerRole(socket: WebSocket, role: ClientRole) {
   if (role === "dashboard") {
     sendJson(socket, { type: "dailyStats", payload: stats });
     sendJson(socket, { type: "serverDiagnostics", payload: diagnosticsPayload() });
-  } else if (role === "iphone_sensor" && latestSettings) {
+  } else if (role === "iphone_sensor") {
     sendJson(socket, { type: "settings_update", payload: latestSettings });
   }
   broadcastDiagnostics();

@@ -17,6 +17,15 @@ struct ContentView: View {
                     Text("\(sessionModel.touchRegionText)  \(sessionModel.touchDistanceText)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(webSocketClient.isConnected ? Color.green : Color.orange)
+                            .frame(width: 7, height: 7)
+                        Text(webSocketClient.isConnected ? "PC connected" : webSocketClient.connectionStatus)
+                            .lineLimit(1)
+                    }
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(webSocketClient.isConnected ? .green : .orange)
                 }
                 Spacer()
                 Text("\(sessionModel.fpsText) fps")
@@ -62,7 +71,7 @@ struct ContentView: View {
                     DebugRow(label: "touch duration", value: sessionModel.touchDurationText)
                     DebugRow(label: "touch model xyz", value: sessionModel.touchModelPositionText)
                     DebugRow(label: "touch surface mix", value: sessionModel.touchSurfaceMixText)
-                    DebugRow(label: "calibrated model center", value: sessionModel.brainModelCenterText)
+                    DebugRow(label: "brain center (AR world)", value: sessionModel.brainModelCenterText)
 
                     Divider()
                         .background(.white.opacity(0.28))
@@ -183,14 +192,14 @@ struct ContentView: View {
                     CalibrationStepper(
                         label: "touch threshold",
                         value: calibrationBinding(\.touchThresholdCm),
-                        range: 0.5...20.0,
+                        range: 0.5...8.0,
                         step: 0.5,
                         unit: "cm"
                     )
                     CalibrationStepper(
                         label: "strong touch threshold",
                         value: calibrationBinding(\.strongTouchThresholdCm),
-                        range: 0.5...20.0,
+                        range: 0.5...8.0,
                         step: 0.5,
                         unit: "cm"
                     )
@@ -315,6 +324,7 @@ struct ContentView: View {
             webSocketClient.onSettingsUpdate = { settings in
                 sessionModel.applyRemoteSettings(settings)
             }
+            webSocketClient.connect()
         }
     }
 

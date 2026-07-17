@@ -3,7 +3,7 @@ import type { DailyStats, DashboardStatus, PerformanceOutputSettings, PixelPoint
 
 const WS_URL = "ws://127.0.0.1:8787";
 const MAX_LOGS = 10;
-const THRESHOLDS_STORAGE_KEY = "brain-touch-dashboard.thresholds.v1";
+const THRESHOLDS_STORAGE_KEY = "brain-touch-dashboard.thresholds.v2";
 const PERFORMANCE_OUTPUT_STORAGE_KEY = "brain-touch-dashboard.performance-output.v1";
 
 type ThresholdSettings = {
@@ -18,7 +18,7 @@ const DEFAULT_THRESHOLDS: ThresholdSettings = {
   touchThresholdCm: 5,
   strongTouchThresholdCm: 3,
   dwellTimeSeconds: 0.5,
-  confidenceThreshold: 0.75,
+  confidenceThreshold: 0.55,
   smoothingFrames: 5
 };
 
@@ -102,8 +102,8 @@ function loadThresholdSettings(): ThresholdSettings {
 
     const parsed = JSON.parse(raw) as Partial<ThresholdSettings>;
     return {
-      touchThresholdCm: clamp(Number(parsed.touchThresholdCm ?? DEFAULT_THRESHOLDS.touchThresholdCm), 0.5, 20),
-      strongTouchThresholdCm: clamp(Number(parsed.strongTouchThresholdCm ?? DEFAULT_THRESHOLDS.strongTouchThresholdCm), 0.5, 20),
+      touchThresholdCm: clamp(Number(parsed.touchThresholdCm ?? DEFAULT_THRESHOLDS.touchThresholdCm), 0.5, 8),
+      strongTouchThresholdCm: clamp(Number(parsed.strongTouchThresholdCm ?? DEFAULT_THRESHOLDS.strongTouchThresholdCm), 0.5, 8),
       dwellTimeSeconds: clamp(Number(parsed.dwellTimeSeconds ?? DEFAULT_THRESHOLDS.dwellTimeSeconds), 0, 3),
       confidenceThreshold: clamp(Number(parsed.confidenceThreshold ?? DEFAULT_THRESHOLDS.confidenceThreshold), 0, 1),
       smoothingFrames: Math.round(clamp(Number(parsed.smoothingFrames ?? DEFAULT_THRESHOLDS.smoothingFrames), 1, 30))
@@ -428,7 +428,7 @@ function App() {
               label="touch threshold cm"
               value={thresholds.touchThresholdCm}
               min={0.5}
-              max={30}
+              max={8}
               step={0.5}
               unit="cm"
               onChange={(value) => updateThreshold("touchThresholdCm", value)}
@@ -437,7 +437,7 @@ function App() {
               label="strong touch threshold cm"
               value={thresholds.strongTouchThresholdCm}
               min={0.5}
-              max={30}
+              max={8}
               step={0.5}
               unit="cm"
               onChange={(value) => updateThreshold("strongTouchThresholdCm", value)}
@@ -446,7 +446,7 @@ function App() {
               label="dwell time seconds"
               value={thresholds.dwellTimeSeconds}
               min={0}
-              max={5}
+              max={3}
               step={0.1}
               unit="s"
               onChange={(value) => updateThreshold("dwellTimeSeconds", value)}

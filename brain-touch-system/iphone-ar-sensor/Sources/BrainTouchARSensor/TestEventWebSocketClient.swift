@@ -384,7 +384,7 @@ struct RemoteSettingsUpdatePayload: Codable, Equatable {
     let smoothingFrames: Int
 
     func sanitized() -> RemoteSettingsUpdatePayload {
-        let sanitizedTouch = Self.clamp(touchThresholdCm, min: 0.5, max: 20.0)
+        let sanitizedTouch = Self.clamp(touchThresholdCm, min: 0.5, max: 8.0)
         return RemoteSettingsUpdatePayload(
             touchThresholdCm: sanitizedTouch,
             strongTouchThresholdCm: Self.clamp(strongTouchThresholdCm, min: 0.5, max: sanitizedTouch),
