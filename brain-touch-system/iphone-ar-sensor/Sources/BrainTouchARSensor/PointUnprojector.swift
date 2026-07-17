@@ -182,19 +182,22 @@ struct Point3DSmoother {
             samples.removeFirst(samples.count - maxSampleCount)
         }
 
-        let count = Double(samples.count)
-        let sum = samples.reduce(HandJoint3D(x: 0, y: 0, z: 0)) { partial, sample in
-            HandJoint3D(
-                x: partial.x + sample.x,
-                y: partial.y + sample.y,
-                z: partial.z + sample.z
+        var totalWeight = 0.0
+        let sum = samples.enumerated().reduce(HandJoint3D(x: 0, y: 0, z: 0)) { partial, entry in
+            let weight = Double(entry.offset + 1)
+            totalWeight += weight
+            let sample = entry.element
+            return HandJoint3D(
+                x: partial.x + sample.x * weight,
+                y: partial.y + sample.y * weight,
+                z: partial.z + sample.z * weight
             )
         }
 
         return HandJoint3D(
-            x: sum.x / count,
-            y: sum.y / count,
-            z: sum.z / count
+            x: sum.x / totalWeight,
+            y: sum.y / totalWeight,
+            z: sum.z / totalWeight
         )
     }
 

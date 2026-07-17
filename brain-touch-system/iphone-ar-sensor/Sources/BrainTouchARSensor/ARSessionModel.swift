@@ -560,7 +560,8 @@ private extension ARSessionModel {
             hasDepth: selected != nil,
             timestamp: timestamp,
             meshHit: selected?.surfaceHit,
-            surfaceApproachAlignment: selected?.surfaceApproachAlignment
+            surfaceApproachAlignment: selected?.surfaceApproachAlignment,
+            evidenceFresh: !detection.isRetained
         )
 
         return HandPoseSnapshot(

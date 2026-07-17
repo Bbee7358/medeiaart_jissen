@@ -10,6 +10,7 @@ import UIKit
 
 struct MediaPipeHandDetection: Equatable {
     let handDetected: Bool
+    let isRetained: Bool
     let landmarks: [HandJoint2D?]
     let confidence: Double
     let inferenceMs: Double?
@@ -17,6 +18,7 @@ struct MediaPipeHandDetection: Equatable {
 
     static let unavailable = MediaPipeHandDetection(
         handDetected: false,
+        isRetained: false,
         landmarks: Array(repeating: nil, count: MediaPipeHandLandmark.count),
         confidence: 0,
         inferenceMs: nil,
@@ -67,10 +69,13 @@ enum MediaPipeHandConnections {
 
 final class MediaPipeHandLandmarker {
     private(set) var status = "initializing"
+    private let missingHandGraceMs = 240
 
     #if canImport(MediaPipeTasksVision)
     private var handLandmarker: HandLandmarker?
     private let ciContext = CIContext()
+    private var previousLandmarks: [HandJoint2D?]?
+    private var lastDetectedAtMs: Int?
     #endif
 
     init() {
@@ -83,9 +88,9 @@ final class MediaPipeHandLandmarker {
         let options = HandLandmarkerOptions()
         options.runningMode = .video
         options.numHands = 1
-        options.minHandDetectionConfidence = 0.45
-        options.minHandPresenceConfidence = 0.45
-        options.minTrackingConfidence = 0.45
+        options.minHandDetectionConfidence = 0.35
+        options.minHandPresenceConfidence = 0.35
+        options.minTrackingConfidence = 0.50
         options.baseOptions.modelAssetPath = modelPath
         options.baseOptions.delegate = .CPU
 
@@ -105,6 +110,7 @@ final class MediaPipeHandLandmarker {
         guard let handLandmarker else {
             return MediaPipeHandDetection(
                 handDetected: false,
+                isRetained: false,
                 landmarks: Array(repeating: nil, count: MediaPipeHandLandmark.count),
                 confidence: 0,
                 inferenceMs: nil,
@@ -115,6 +121,7 @@ final class MediaPipeHandLandmarker {
         guard let image = makePortraitBackCameraUIImage(from: pixelBuffer) else {
             return MediaPipeHandDetection(
                 handDetected: false,
+                isRetained: false,
                 landmarks: Array(repeating: nil, count: MediaPipeHandLandmark.count),
                 confidence: 0,
                 inferenceMs: nil,
@@ -131,8 +138,23 @@ final class MediaPipeHandLandmarker {
             )
             let inferenceMs = Date().timeIntervalSince(start) * 1000
             guard let firstHand = result.landmarks.first else {
+                let nowMs = Self.uptimeMilliseconds
+                if let previousLandmarks,
+                   let lastDetectedAtMs,
+                   nowMs - lastDetectedAtMs <= missingHandGraceMs {
+                    return MediaPipeHandDetection(
+                        handDetected: true,
+                        isRetained: true,
+                        landmarks: previousLandmarks,
+                        confidence: 0.45,
+                        inferenceMs: inferenceMs,
+                        status: "MediaPipe hand retained"
+                    )
+                }
+                previousLandmarks = nil
                 return MediaPipeHandDetection(
                     handDetected: false,
+                    isRetained: false,
                     landmarks: Array(repeating: nil, count: MediaPipeHandLandmark.count),
                     confidence: 0,
                     inferenceMs: inferenceMs,
@@ -140,10 +162,17 @@ final class MediaPipeHandLandmarker {
                 )
             }
 
-            let displayLandmarks = firstHand.map(Self.normalizedLandmarkToDisplayPoint)
+            let rawLandmarks = firstHand.map(Self.normalizedLandmarkToDisplayPoint)
+            let displayLandmarks = Self.smoothedLandmarks(
+                current: rawLandmarks,
+                previous: previousLandmarks
+            )
+            previousLandmarks = displayLandmarks
+            lastDetectedAtMs = Self.uptimeMilliseconds
 
             return MediaPipeHandDetection(
                 handDetected: true,
+                isRetained: false,
                 landmarks: displayLandmarks,
                 confidence: 1.0,
                 inferenceMs: inferenceMs,
@@ -152,6 +181,7 @@ final class MediaPipeHandLandmarker {
         } catch {
             return MediaPipeHandDetection(
                 handDetected: false,
+                isRetained: false,
                 landmarks: Array(repeating: nil, count: MediaPipeHandLandmark.count),
                 confidence: 0,
                 inferenceMs: nil,
@@ -182,6 +212,29 @@ final class MediaPipeHandLandmarker {
             x: min(max(Double(landmark.x), 0), 1),
             y: min(max(Double(landmark.y), 0), 1)
         )
+    }
+
+    private static var uptimeMilliseconds: Int {
+        Int(DispatchTime.now().uptimeNanoseconds / 1_000_000)
+    }
+
+    private static func smoothedLandmarks(
+        current: [HandJoint2D],
+        previous: [HandJoint2D?]?
+    ) -> [HandJoint2D?] {
+        guard let previous, previous.count == current.count else {
+            return current.map(Optional.some)
+        }
+
+        return current.enumerated().map { index, point in
+            guard let prior = previous[index] else { return point }
+            let isFingerTip = [4, 8, 12, 16, 20].contains(index)
+            let alpha = isFingerTip ? 0.78 : 0.64
+            return HandJoint2D(
+                x: prior.x * (1 - alpha) + point.x * alpha,
+                y: prior.y * (1 - alpha) + point.y * alpha
+            )
+        }
     }
     #endif
 }

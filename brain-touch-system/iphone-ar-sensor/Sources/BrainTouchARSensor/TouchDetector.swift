@@ -42,6 +42,7 @@ final class TouchDetector {
     private var pendingRegion: (id: String, label: String, frames: Int)?
     private var lastPoint: HandJoint3D?
     private var lastTimestamp: TimeInterval?
+    private var wasTouching = false
 
     init(calibration: BrainCalibration = .defaults) {
         self.calibration = calibration
@@ -59,11 +60,13 @@ final class TouchDetector {
         hasDepth: Bool,
         timestamp: TimeInterval,
         meshHit: NearestSurfaceHit? = nil,
-        surfaceApproachAlignment: Double? = nil
+        surfaceApproachAlignment: Double? = nil,
+        evidenceFresh: Bool = true
     ) -> TouchDetectionResult {
         let motionPoint = indexTip3D ?? meshHit?.point
         guard hasDepth, let point = motionPoint else {
             resetRegion()
+            wasTouching = false
             updateMotion(point: nil, timestamp: timestamp)
             return .empty
         }
@@ -87,9 +90,11 @@ final class TouchDetector {
             speedMetersPerSec: speed,
             surfaceApproachAlignment: surfaceApproachAlignment
         )
-        let isTouching = isCandidate
+        let meetsTouchRequirements = isCandidate
             && duration >= calibration.dwellTimeSeconds
             && confidence >= calibration.confidenceThreshold
+        let isTouching = meetsTouchRequirements && (evidenceFresh || wasTouching)
+        wasTouching = isTouching
 
         return TouchDetectionResult(
             isCandidate: isCandidate,
