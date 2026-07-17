@@ -2,6 +2,7 @@ import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import Ajv2020Import, { type ErrorObject } from "ajv/dist/2020.js";
 import { WebSocketServer, WebSocket } from "ws";
@@ -116,6 +117,18 @@ function getLocalIPv4Addresses() {
   )];
 }
 
+function getBonjourHostnames() {
+  try {
+    const localHostName = execFileSync("scutil", ["--get", "LocalHostName"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim();
+    return localHostName ? [`${localHostName}.local`] : [];
+  } catch {
+    return [];
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
@@ -158,12 +171,15 @@ function clientCounts() {
 
 function diagnosticsPayload() {
   const localAddresses = getLocalIPv4Addresses();
+  const bonjourHostnames = getBonjourHostnames();
+  const endpoints = [...bonjourHostnames, ...localAddresses];
   return {
     clientCount: clients.size,
     clientRoles: clientCounts(),
     localAddresses,
-    healthUrls: localAddresses.map((address) => `http://${address}:${PORT}/health`),
-    websocketUrls: localAddresses.map((address) => `ws://${address}:${PORT}`),
+    bonjourHostnames,
+    healthUrls: endpoints.map((host) => `http://${host}:${PORT}/health`),
+    websocketUrls: endpoints.map((host) => `ws://${host}:${PORT}`),
     lastEventAt,
     lastEventRemote,
     lastHttpRequestAt,
@@ -171,7 +187,7 @@ function diagnosticsPayload() {
     lastSettingsAt,
     lastSettingsRemote,
     performanceClientCount: performanceClients.size,
-    performanceWebSocketUrls: localAddresses.map((address) => `ws://${address}:${PERFORMANCE_PORT}`),
+    performanceWebSocketUrls: endpoints.map((host) => `ws://${host}:${PERFORMANCE_PORT}`),
     performanceOutputEnabled: performanceOutputSettings.enabled,
     lastPerformanceEventAt,
     lastPerformanceEventRegion,

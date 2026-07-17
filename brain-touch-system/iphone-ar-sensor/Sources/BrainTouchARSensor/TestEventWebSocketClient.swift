@@ -2,7 +2,7 @@ import Foundation
 
 @MainActor
 final class TestEventWebSocketClient: NSObject, ObservableObject {
-    @Published var urlString = "ws://WatanabenoMacBook-Air.local:8787"
+    @Published var urlString = "ws://WatanabenoMacBook-Air-2.local:8787"
     @Published var connectionStatus = "disconnected"
     @Published var lastSentTimestampText = "-"
     @Published var lastSentJSON = ""
